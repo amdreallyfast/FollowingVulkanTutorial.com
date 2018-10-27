@@ -111,6 +111,11 @@
 //}
 
 
+/*-------------------------------------------------------------------------------------------------
+Description:
+    A wrapper for the dynamic calling of vkCreateDebugUtilsMessengerEXT(...).
+Creator:    John Cox, 10/2018
+-------------------------------------------------------------------------------------------------*/
 VkResult CreateDebugUtilsMessengerEXT(
     VkInstance instance,
     const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo,
@@ -127,6 +132,11 @@ VkResult CreateDebugUtilsMessengerEXT(
     }
 }
 
+/*-------------------------------------------------------------------------------------------------
+Description:
+    A wrapper for the dynamic calling of vkDestroyDebugUTilsMessengerEXT(...).
+Creator:    John Cox, 10/2018
+-------------------------------------------------------------------------------------------------*/
 void DestroyDebugUtilsMessengEXT(
     VkInstance instance,
     VkDebugUtilsMessengerEXT callback,
@@ -134,10 +144,18 @@ void DestroyDebugUtilsMessengEXT(
 
     auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkDestroyDebugUTilsMessengerEXT");
     if (func != nullptr) {
-        func(instance, callback, pAllocator);
+        return func(instance, callback, pAllocator);
+    }
+    else {
+        // ignore; the "destroy" function does not return anything
     }
 }
 
+/*-------------------------------------------------------------------------------------------------
+Description:
+    The class for this tutorial series.
+Creator:    John Cox, 10/2018
+-------------------------------------------------------------------------------------------------*/
 class HelloTriangleApplication {
 private:
     GLFWwindow *mWindow = nullptr;
@@ -154,6 +172,7 @@ private:
 
     VkInstance mInstance;
     VkDebugUtilsMessengerEXT mCallback;
+    VkPhysicalDevice mPhysicalDevice = VK_NULL_HANDLE;
 
 public:
     void Run() {
@@ -165,15 +184,18 @@ public:
 
 private:
 
-    void CheckGlfwExtensionsSupportedByDriver() const {
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        Support function for CreateInstance(). It checks ever string in the argument against the 
+        extension list provided by the driver. If there is something in the required list that 
+        isn't in the driver's list, an error is thrown.
+    Creator:    John Cox, 10/2018
+    ---------------------------------------------------------------------------------------------*/
+    void CheckRequiredExtensionsSupportedByDriver(const std::vector<const char *> &requiredExtensions) const {
         uint32_t instanceExtensionCount = 0;
         vkEnumerateInstanceExtensionProperties(nullptr, &instanceExtensionCount, nullptr);
         std::vector<VkExtensionProperties> instanceExtensions(instanceExtensionCount);
         vkEnumerateInstanceExtensionProperties(nullptr, &instanceExtensionCount, instanceExtensions.data());
-
-        uint32_t glfwExtensionCount = 0;
-        const char ** glfwExtensions;
-        glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
 
 #ifndef PRINT_EXTENSIONS
         // carry on
@@ -202,10 +224,10 @@ private:
         std::cout << ss.str();
 #endif // NDEBUG
 
-        for (uint32_t glfwCount = 0; glfwCount < glfwExtensionCount; glfwCount++) {
+        for (auto &reqExt : requiredExtensions) {
             bool found = false;
             for (auto &prop : instanceExtensions) {
-                if (strcmp(glfwExtensions[glfwCount], prop.extensionName) == 0) {
+                if (strcmp(reqExt, prop.extensionName) == 0) {
                     found = true;
                     break;
                 }
@@ -213,13 +235,20 @@ private:
 
             if (!found) {
                 std::stringstream ss;
-                ss << "Required extension '" << glfwExtensions[glfwCount] << "' not found in the available driver extensions";
+                ss << "Required extension '" << reqExt << "' not found in the available driver extensions";
                 throw std::runtime_error(ss.str());
             }
+
         }
     }
 
-    void CheckValidationLayerSupport(const std::vector<const char *> &requiredLayers) {
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        Support function for CreateInstance(). Like CheckRequiredExtensionsSupportedByDriver(...),
+        but for validation layers.
+    Creator:    John Cox, 10/2018
+    ---------------------------------------------------------------------------------------------*/
+    void CheckValidationLayersSupportedByDriver(const std::vector<const char *> &requiredLayers) const {
         uint32_t layerCount;
         vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
         std::vector<VkLayerProperties> availableLayers(layerCount);
@@ -242,17 +271,11 @@ private:
         }
     }
 
-    std::vector<const char *> GetRequiredExtensions() const {
-        uint32_t glfwExtensionCount = 0;
-        const char ** glfwExtensions;
-        glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
-        std::vector<const char *> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
-        if (mEnableValidationLayers) {
-            extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-        }
-        return extensions;
-    }
-
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        The function called by VK_EXT_debug_utils callback object.
+    Creator:    John Cox, 10/2018
+    ---------------------------------------------------------------------------------------------*/
     static VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
         VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
         VkDebugUtilsMessageTypeFlagsEXT messageType,
@@ -263,9 +286,12 @@ private:
         return VK_FALSE;
     }
 
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        Creates the VkInstance class member. Includes checking for extension and layer support.
+    Creator:    John Cox, 10/2018
+    ---------------------------------------------------------------------------------------------*/
     void CreateInstance() {
-        CheckGlfwExtensionsSupportedByDriver();
-
         // general info about the application
         VkApplicationInfo appInfo{};
         appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -289,7 +315,8 @@ private:
             "VK_LAYER_LUNARG_standard_validation",
         };
         if (mEnableValidationLayers) {
-            CheckValidationLayerSupport(requiredValidationLayers);
+            CheckValidationLayersSupportedByDriver(requiredValidationLayers);
+            CheckRequiredExtensionsSupportedByDriver(requiredExtensions);
         }
 
         // for printing debug info with the "debug utils" callback messenger object
@@ -352,16 +379,31 @@ private:
         mWindow = glfwCreateWindow(mWindowWidth, mWindowHeight, "Vulkan", monitor, nullptr);
     }
 
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        Governs the initialization of a Vulkan instance and devices.
+    Creator:    John Cox, 10/2018
+    ---------------------------------------------------------------------------------------------*/
     void InitVulkan() {
         CreateInstance();
     }
 
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        Responsible for the "while(not exit trigger) do program" loop.
+    Creator:    John Cox, 10/2018
+    ---------------------------------------------------------------------------------------------*/
     void MainLoop() {
         //while (!glfwWindowShouldClose(mWindow)) {
         //    glfwPollEvents();
         //}
     }
 
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        Governs cleanup.
+    Creator:    John Cox, 10/2018
+    ---------------------------------------------------------------------------------------------*/
     void Cleanup() {
         if (mCallback != 0) {
             DestroyDebugUtilsMessengEXT(mInstance, mCallback, nullptr);
