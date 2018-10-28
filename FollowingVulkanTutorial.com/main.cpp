@@ -4,6 +4,7 @@
 #include <sstream>  // for format-capable stringstream
 #include <iomanip>  // for std::setfill(...) and std::setw(...)
 #include <vector>
+#include <optional>
 
 //VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
 //    VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
@@ -173,6 +174,13 @@ private:
     VkInstance mInstance;
     VkDebugUtilsMessengerEXT mCallback;
     VkPhysicalDevice mPhysicalDevice = VK_NULL_HANDLE;
+
+    struct QueueFamilyIndices {
+        std::optional<uint32_t> graphicsFamily;
+        bool IsComplete() {
+            return graphicsFamily.hasvalue();
+        }
+    };
 
 public:
     void Run() {
@@ -359,6 +367,49 @@ private:
 
     }
 
+
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        Checks if the necessary features to run this program are available on the provided GPU.
+    Creator:    John Cox, 10/2018
+    ---------------------------------------------------------------------------------------------*/
+    bool IsDeviceSuitable(VkPhysicalDevice device) {
+        VkPhysicalDeviceProperties deviceProperties;
+        vkGetPhysicalDeviceProperties(device, &deviceProperties);
+        VkPhysicalDeviceFeatures deviceFeatures;
+        vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+
+        bool success =
+            deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU &&
+            deviceFeatures.geometryShader;
+        return success;
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        Sets the GPU that will be used for the rest of the program.
+    Creator:    John Cox, 10/2018
+    ---------------------------------------------------------------------------------------------*/
+    void PickPhysicalDevice() {
+        uint32_t deviceCount = 0;
+        vkEnumeratePhysicalDevices(mInstance, &deviceCount, nullptr);
+        if (deviceCount == 0) {
+            throw std::runtime_error("failed to find GPUs with Vulkan support");
+        }
+
+        std::vector<VkPhysicalDevice> devices(deviceCount);
+        vkEnumeratePhysicalDevices(mInstance, &deviceCount, devices.data());
+
+        // take the first one that Vulkan can use
+        for (const auto &dev : devices) {
+            if (IsDeviceSuitable(dev)) {
+                mPhysicalDevice = dev;
+                break;
+            }
+        }
+    }
+
     /*---------------------------------------------------------------------------------------------
     Description:
         Creates a GLFW window (??anything else??).
@@ -386,6 +437,7 @@ private:
     ---------------------------------------------------------------------------------------------*/
     void InitVulkan() {
         CreateInstance();
+        PickPhysicalDevice();
     }
 
     /*---------------------------------------------------------------------------------------------
