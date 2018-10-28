@@ -178,7 +178,7 @@ private:
     struct QueueFamilyIndices {
         std::optional<uint32_t> graphicsFamily;
         bool IsComplete() {
-            return graphicsFamily.hasvalue();
+            return graphicsFamily.has_value();
         }
     };
 
