@@ -4,6 +4,7 @@
 #include <sstream>  // for format-capable stringstream
 #include <iomanip>  // for std::setfill(...) and std::setw(...)
 #include <vector>
+#include <set> //??why??
 #include <optional>
 
 //VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
@@ -112,6 +113,10 @@
 //}
 
 
+
+
+
+
 /*-------------------------------------------------------------------------------------------------
 Description:
     A wrapper for the dynamic calling of vkCreateDebugUtilsMessengerEXT(...).
@@ -175,19 +180,29 @@ private:
     VkPhysicalDevice mPhysicalDevice = VK_NULL_HANDLE;
     VkDevice mLogicalDevice = VK_NULL_HANDLE;
     VkQueue mGraphicsQueue = VK_NULL_HANDLE;
+    VkSurfaceKHR mSurface = VK_NULL_HANDLE;
+    VkQueue mPresentationQueue = VK_NULL_HANDLE;
 
     /*---------------------------------------------------------------------------------------------
     Description:
         Encapsulates info about whether or not the necessary command queue indexes 
-        (driver-specific-but-won't-change-at-runtime locations) have been acquired. Currently 
-        (10/27/2018) only needing a handle to the graphics command queue, but as the tutorial 
-        progresses, there will be more command queues added. 
+        (driver-specific-but-won't-change-at-runtime locations) have been acquired.
     Creator:    John Cox, 10/2018
     ---------------------------------------------------------------------------------------------*/
     struct QueueFamilyIndices {
+        // can the GPU draw graphics?
         std::optional<uint32_t> graphicsFamily;
+
+        // can the GPU's driver draw to the surface that we're using?
+        std::optional<uint32_t> presentationFamily; //??"present family"??
+
+        //void Reset() {
+        //    graphicsFamily.reset();
+        //    presentationFamily.reset();
+        //}
+
         bool IsComplete() {
-            return graphicsFamily.has_value();
+            return graphicsFamily.has_value() && presentationFamily.has_value();
         }
     };
 
@@ -343,7 +358,7 @@ private:
             debugCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
             debugCreateInfo.messageSeverity =
                 VkDebugUtilsMessageSeverityFlagBitsEXT::VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-                VkDebugUtilsMessageSeverityFlagBitsEXT::VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
+                //VkDebugUtilsMessageSeverityFlagBitsEXT::VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
                 VkDebugUtilsMessageSeverityFlagBitsEXT::VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
                 VkDebugUtilsMessageSeverityFlagBitsEXT::VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
             debugCreateInfo.messageType =
@@ -385,19 +400,49 @@ private:
 
         uint32_t queueFamilyCount = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
-        std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-        vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+        std::vector<VkQueueFamilyProperties> queueFamilyProperties(queueFamilyCount);
+        vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilyProperties.data());
 
-        uint32_t i = 0;
-        for (const auto &queueFamily : queueFamilies) {
-            bool exists = queueFamily.queueCount > 0;
-            bool supportsGraphics = (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0;
-            if (exists && supportsGraphics) {
-                indices.graphicsFamily = i;
+        for (uint32_t index = 0; index < queueFamilyCount; index++) {
+            const auto &queueFamilyProp = queueFamilyProperties.at(index);
+            bool queueExists = queueFamilyProp.queueCount > 0;
+
+            bool supportsGraphics = (queueFamilyProp.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0;
+            if (queueExists && supportsGraphics) {
+                indices.graphicsFamily = index;
+            }
+
+            VkBool32 surfaceSupported = false;    //??"present support"? what does that mean??
+            vkGetPhysicalDeviceSurfaceSupportKHR(device, index, mSurface, &surfaceSupported);
+            if (queueExists && surfaceSupported) {
+                indices.presentationFamily = index;
+            }
+
+            if (indices.IsComplete()) {
                 break;
             }
-            i++;
+            //else {
+            //    indices.Reset();
+            //}
         }
+
+        //uint32_t queueFamilyIndexCounter = 0;
+        //for (const auto &queueFamily : queueFamilies) {
+        //    bool queueExists = queueFamily.queueCount > 0;
+
+        //    bool supportsGraphics = (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0;
+        //    if (queueExists && supportsGraphics) {
+        //        indices.graphicsFamily = queueFamilyIndexCounter;
+        //    }
+
+        //    VkBool32 surfaceSupported = false;    //??"present support"? what does that mean??
+        //    vkGetPhysicalDeviceSurfaceSupportKHR(device, queueFamilyIndexCounter, mSurface, &surfaceSupported);
+        //    if (queueExists && surfaceSupported) {
+        //        indices.presentFamily = queueFamilyIndexCounter
+        //    }
+
+        //    queueFamilyIndexCounter++;
+        //}
         return indices;
     }
 
@@ -452,31 +497,49 @@ private:
     Creator:    John Cox, 10/2018
     ---------------------------------------------------------------------------------------------*/
     void CreateLogicalDevice() {
-        // need 1 "create info" for each queue, but only have the graphics command queue right now
-        // Note: Command buffer scheduling priority is 0-1 float. Scheduling priority is required 
-        // even if there is only one queue. In this case, it won't matter what the priority is, 
-        // but we'll set it at 1 (highest) anyway.
+        //// need 1 "create info" for each queue, but only have the graphics command queue right now
+        //// Note: Command buffer scheduling priority is 0-1 float. Scheduling priority is required 
+        //// even if there is only one queue. In this case, it won't matter what the priority is, 
+        //// but we'll set it at 1 (highest) anyway.
         float queuePriority = 1.0f;
         QueueFamilyIndices indices = FindQueueFamilies(mPhysicalDevice);
-        VkDeviceQueueCreateInfo queueCreateInfo{};
-        queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-        queueCreateInfo.queueFamilyIndex = indices.graphicsFamily.value();
-        queueCreateInfo.queueCount = 1;
-        queueCreateInfo.pQueuePriorities = &queuePriority;
+        //VkDeviceQueueCreateInfo queueCreateInfo{};
+        //queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        //queueCreateInfo.queueFamilyIndex = indices.graphicsFamily.value();
+        //queueCreateInfo.queueCount = 1;
+        //queueCreateInfo.pQueuePriorities = &queuePriority;
+
+        std::vector<VkDeviceQueueCreateInfo> deviceCommandQueuesCreateInfo;
+
+        // using a std::set(...) because it is possible that the queue that supports surface drawing is the same as the graphics queue, and don't want to create duplicate queues (??wat??)
+        std::set<uint32_t> uniqueQueueFamiliesIndices{
+            indices.graphicsFamily.value(),
+            indices.presentationFamily.value()
+        };  //??why a set??
+        for (const auto &queueFamilyIndex : uniqueQueueFamiliesIndices) {
+            VkDeviceQueueCreateInfo createInfo{};
+            createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+            createInfo.queueFamilyIndex = queueFamilyIndex;
+            createInfo.queueCount = 1;
+            createInfo.pQueuePriorities = &queuePriority;   //??same priority??
+            deviceCommandQueuesCreateInfo.push_back(createInfo);
+        }
+
+
 
         // don't need any features yet, so leave it blank for now
         VkPhysicalDeviceFeatures deviceFeatures{};
 
         VkDeviceCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-        createInfo.pQueueCreateInfos = &queueCreateInfo;
-        createInfo.queueCreateInfoCount = 1;
+        createInfo.queueCreateInfoCount = static_cast<uint32_t>(deviceCommandQueuesCreateInfo.size());
+        createInfo.pQueueCreateInfos = deviceCommandQueuesCreateInfo.data();
         createInfo.pEnabledFeatures = &deviceFeatures;
         //createInfo.enabledExtensionCount = 0;
         //if (mEnableValidationLayers) {
         //    createInfo.enabledLayerCount = static_cast<uint32_t>(mRequiredValidationLayers.size());
         //    createInfo.ppEnabledLayerNames = mRequiredValidationLayers.data();
-        //}
+        //}5
         //else {
         //    createInfo.enabledLayerCount = 0;
         //}
@@ -490,7 +553,21 @@ private:
         // Also Note: Not to be confused with queueFamilyIndex, which is physical-device-specific.
         // Gah.
         uint32_t queueIndex = 0;
+
+        // if the graphics queue's family also supported surface drawing, then both queues will have the same handle now (??isn't that a bad thing??)
         vkGetDeviceQueue(mLogicalDevice, indices.graphicsFamily.value(), queueIndex, &mGraphicsQueue);
+        vkGetDeviceQueue(mLogicalDevice, indices.presentationFamily.value(), queueIndex, &mPresentationQueue);
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        ??
+    Creator:    John Cox, 10/2018
+    ---------------------------------------------------------------------------------------------*/
+    void CreateSurface() {
+        if (glfwCreateWindowSurface(mInstance, mWindow, nullptr, &mSurface) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create window surface");
+        }
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -520,9 +597,9 @@ private:
     ---------------------------------------------------------------------------------------------*/
     void InitVulkan() {
         CreateInstance();
+        CreateSurface();
         PickPhysicalDevice();
         CreateLogicalDevice();
-        __noop;
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -543,10 +620,11 @@ private:
     ---------------------------------------------------------------------------------------------*/
     void Cleanup() {
         if (mCallback != 0) {
-            //DestroyDebugUtilsMessengEXT(mInstance, mCallback, nullptr);
+            DestroyDebugUtilsMessengEXT(mInstance, mCallback, nullptr);
         }
 
-        //vkDestroyDevice(mLogicalDevice, nullptr);
+        vkDestroyDevice(mLogicalDevice, nullptr);
+        vkDestroySurfaceKHR(mInstance, mSurface, nullptr);
         vkDestroyInstance(mInstance, nullptr);
         glfwDestroyWindow(mWindow);
         glfwTerminate();
