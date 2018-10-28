@@ -135,6 +135,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="sample.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="cpp.hint" />
