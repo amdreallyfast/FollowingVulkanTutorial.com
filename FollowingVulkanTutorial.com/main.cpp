@@ -163,7 +163,6 @@ private:
     int mWindowWidth = 800;
     int mWindowHeight = 600;
 
-
 #ifdef NDEBUG
     const bool mEnableValidationLayers = false;
 #else
@@ -175,12 +174,14 @@ private:
     VkDebugUtilsMessengerEXT mCallback = VK_NULL_HANDLE;
     VkPhysicalDevice mPhysicalDevice = VK_NULL_HANDLE;
     VkDevice mLogicalDevice = VK_NULL_HANDLE;
+    VkQueue mGraphicsQueue = VK_NULL_HANDLE;
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        Encapsulates info about whether or not the necessary command queue handles have been 
-        acquired. Currently (10/27/2018) only needing a handle to the graphics command queue, but 
-        as the tutorial progresses, there will be more handles added. 
+        Encapsulates info about whether or not the necessary command queue indexes 
+        (driver-specific-but-won't-change-at-runtime locations) have been acquired. Currently 
+        (10/27/2018) only needing a handle to the graphics command queue, but as the tutorial 
+        progresses, there will be more command queues added. 
     Creator:    John Cox, 10/2018
     ---------------------------------------------------------------------------------------------*/
     struct QueueFamilyIndices {
@@ -298,7 +299,7 @@ private:
         const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
         void *pUserData) {
         
-        std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
+        std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl << std::flush;
         return VK_FALSE;
     }
 
@@ -342,7 +343,7 @@ private:
             debugCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
             debugCreateInfo.messageSeverity =
                 VkDebugUtilsMessageSeverityFlagBitsEXT::VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-                //VkDebugUtilsMessageSeverityFlagBitsEXT::VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
+                VkDebugUtilsMessageSeverityFlagBitsEXT::VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
                 VkDebugUtilsMessageSeverityFlagBitsEXT::VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
                 VkDebugUtilsMessageSeverityFlagBitsEXT::VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
             debugCreateInfo.messageType =
@@ -367,30 +368,26 @@ private:
             throw std::runtime_error("failed to create instance");
         }
 
-        // and create the debug messenger itself
-        if (CreateDebugUtilsMessengerEXT(mInstance, &debugCreateInfo, nullptr, &mCallback) != VK_SUCCESS) {
-            throw std::runtime_error("failed to set up debug callback");
-        }
+        //// and create the debug messenger itself
+        //if (CreateDebugUtilsMessengerEXT(mInstance, &debugCreateInfo, nullptr, &mCallback) != VK_SUCCESS) {
+        //    throw std::runtime_error("failed to set up debug callback");
+        //}
     }
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        Checks if the necessary features to run this program are available on the provided GPU.
+        Queries the provided device and checks the properties to see if it supports graphics
+        command queues. (??is there a GPU that doesn't??)
     Creator:    John Cox, 10/2018
     ---------------------------------------------------------------------------------------------*/
-    bool IsDeviceSuitable(VkPhysicalDevice device) {
-        VkPhysicalDeviceProperties deviceProperties;
-        vkGetPhysicalDeviceProperties(device, &deviceProperties);
-        VkPhysicalDeviceFeatures deviceFeatures;
-        vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
-        
-        // record the index (more like a handle/pointer to a hardware-specific location that 
-        // won't change) for graphics command queues 
+    QueueFamilyIndices FindQueueFamilies(VkPhysicalDevice device) {
         QueueFamilyIndices indices;
+
         uint32_t queueFamilyCount = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
         std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
         vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+
         uint32_t i = 0;
         for (const auto &queueFamily : queueFamilies) {
             bool exists = queueFamily.queueCount > 0;
@@ -401,6 +398,22 @@ private:
             }
             i++;
         }
+        return indices;
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        Checks if the necessary features to run this program are available on the provided GPU.
+    Creator:    John Cox, 10/2018
+    ---------------------------------------------------------------------------------------------*/
+    bool IsDeviceSuitable(VkPhysicalDevice device) {
+        VkPhysicalDeviceProperties deviceProperties;
+        vkGetPhysicalDeviceProperties(device, &deviceProperties);
+
+        VkPhysicalDeviceFeatures deviceFeatures;
+        vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+        
+        QueueFamilyIndices indices = FindQueueFamilies(device);
 
         bool success =
             deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU &&
@@ -435,6 +448,53 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
+        ??
+    Creator:    John Cox, 10/2018
+    ---------------------------------------------------------------------------------------------*/
+    void CreateLogicalDevice() {
+        // need 1 "create info" for each queue, but only have the graphics command queue right now
+        // Note: Command buffer scheduling priority is 0-1 float. Scheduling priority is required 
+        // even if there is only one queue. In this case, it won't matter what the priority is, 
+        // but we'll set it at 1 (highest) anyway.
+        float queuePriority = 1.0f;
+        QueueFamilyIndices indices = FindQueueFamilies(mPhysicalDevice);
+        VkDeviceQueueCreateInfo queueCreateInfo{};
+        queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        queueCreateInfo.queueFamilyIndex = indices.graphicsFamily.value();
+        queueCreateInfo.queueCount = 1;
+        queueCreateInfo.pQueuePriorities = &queuePriority;
+
+        // don't need any features yet, so leave it blank for now
+        VkPhysicalDeviceFeatures deviceFeatures{};
+
+        VkDeviceCreateInfo createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+        createInfo.pQueueCreateInfos = &queueCreateInfo;
+        createInfo.queueCreateInfoCount = 1;
+        createInfo.pEnabledFeatures = &deviceFeatures;
+        //createInfo.enabledExtensionCount = 0;
+        //if (mEnableValidationLayers) {
+        //    createInfo.enabledLayerCount = static_cast<uint32_t>(mRequiredValidationLayers.size());
+        //    createInfo.ppEnabledLayerNames = mRequiredValidationLayers.data();
+        //}
+        //else {
+        //    createInfo.enabledLayerCount = 0;
+        //}
+
+        if (vkCreateDevice(mPhysicalDevice, &createInfo, nullptr, &mLogicalDevice) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create logical device");
+        }
+
+        // and retrieve the command queue that was created with it (based on createInfo)
+        // Note: Only created one command queue with the device, so use index 0.
+        // Also Note: Not to be confused with queueFamilyIndex, which is physical-device-specific.
+        // Gah.
+        uint32_t queueIndex = 0;
+        vkGetDeviceQueue(mLogicalDevice, indices.graphicsFamily.value(), queueIndex, &mGraphicsQueue);
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
         Creates a GLFW window (??anything else??).
     Creator:    John Cox, 10/2018
     ---------------------------------------------------------------------------------------------*/
@@ -461,6 +521,8 @@ private:
     void InitVulkan() {
         CreateInstance();
         PickPhysicalDevice();
+        CreateLogicalDevice();
+        __noop;
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -484,6 +546,7 @@ private:
             //DestroyDebugUtilsMessengEXT(mInstance, mCallback, nullptr);
         }
 
+        //vkDestroyDevice(mLogicalDevice, nullptr);
         vkDestroyInstance(mInstance, nullptr);
         glfwDestroyWindow(mWindow);
         glfwTerminate();
