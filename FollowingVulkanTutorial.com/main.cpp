@@ -355,19 +355,42 @@ private:
         instanceCreateInfo.ppEnabledLayerNames = requiredValidationLayers.data();
         instanceCreateInfo.pNext = &debugCreateInfo;
 
-        VkInstance instance;
-        if (vkCreateInstance(&instanceCreateInfo, nullptr, &instance) != VK_SUCCESS) {
+        if (vkCreateInstance(&instanceCreateInfo, nullptr, &mInstance) != VK_SUCCESS) {
             throw std::runtime_error("failed to create instance");
         }
 
         // and create the debug messenger itself
-        if (CreateDebugUtilsMessengerEXT(instance, &debugCreateInfo, nullptr, &mCallback) != VK_SUCCESS) {
+        if (CreateDebugUtilsMessengerEXT(mInstance, &debugCreateInfo, nullptr, &mCallback) != VK_SUCCESS) {
             throw std::runtime_error("failed to set up debug callback");
         }
-
     }
 
+    ///*---------------------------------------------------------------------------------------------
+    //Description:
+    //    Queries the provided device and checks the properties to see if it supports graphics 
+    //    command queues. (??is there a GPU that doesn't??)
+    //Creator:    John Cox, 10/2018
+    //---------------------------------------------------------------------------------------------*/
+    //QueueFamilyIndices FindQueueFamilies(VkPhysicalDevice device) {
+    //    QueueFamilyIndices indices;
 
+    //    uint32_t queueFamilyCount = 0;
+    //    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+    //    std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+    //    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+
+    //    uint32_t i = 0;
+    //    for (const auto &queueFamily : queueFamilies) {
+    //        bool exists = queueFamily.queueCount > 0;
+    //        bool supportsGraphics = (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0;
+    //        if (exists && supportsGraphics) {
+    //            indices.graphicsFamily = i;
+    //            break;
+    //        }
+    //        i++;
+    //    }
+    //    return indices;
+    //}
 
     /*---------------------------------------------------------------------------------------------
     Description:
@@ -379,10 +402,29 @@ private:
         vkGetPhysicalDeviceProperties(device, &deviceProperties);
         VkPhysicalDeviceFeatures deviceFeatures;
         vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+        
+        // record the index (more like a handle/pointer to a hardware-specific location that 
+        // won't change) for graphics command queues 
+        QueueFamilyIndices indices;
+        uint32_t queueFamilyCount = 0;
+        vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+        std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+        vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+        uint32_t i = 0;
+        for (const auto &queueFamily : queueFamilies) {
+            bool exists = queueFamily.queueCount > 0;
+            bool supportsGraphics = (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0;
+            if (exists && supportsGraphics) {
+                indices.graphicsFamily = i;
+                break;
+            }
+            i++;
+        }
 
         bool success =
             deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU &&
-            deviceFeatures.geometryShader;
+            deviceFeatures.geometryShader &&
+            indices.IsComplete();
         return success;
     }
 
@@ -458,7 +500,7 @@ private:
     ---------------------------------------------------------------------------------------------*/
     void Cleanup() {
         if (mCallback != 0) {
-            DestroyDebugUtilsMessengEXT(mInstance, mCallback, nullptr);
+            //DestroyDebugUtilsMessengEXT(mInstance, mCallback, nullptr);
         }
 
         vkDestroyInstance(mInstance, nullptr);
