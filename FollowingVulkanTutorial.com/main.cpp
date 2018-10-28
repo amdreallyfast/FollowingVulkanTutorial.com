@@ -171,10 +171,18 @@ private:
 #endif // NDEBUG
 
 
-    VkInstance mInstance;
-    VkDebugUtilsMessengerEXT mCallback;
+    VkInstance mInstance = VK_NULL_HANDLE;
+    VkDebugUtilsMessengerEXT mCallback = VK_NULL_HANDLE;
     VkPhysicalDevice mPhysicalDevice = VK_NULL_HANDLE;
+    VkDevice mLogicalDevice = VK_NULL_HANDLE;
 
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        Encapsulates info about whether or not the necessary command queue handles have been 
+        acquired. Currently (10/27/2018) only needing a handle to the graphics command queue, but 
+        as the tutorial progresses, there will be more handles added. 
+    Creator:    John Cox, 10/2018
+    ---------------------------------------------------------------------------------------------*/
     struct QueueFamilyIndices {
         std::optional<uint32_t> graphicsFamily;
         bool IsComplete() {
@@ -364,33 +372,6 @@ private:
             throw std::runtime_error("failed to set up debug callback");
         }
     }
-
-    ///*---------------------------------------------------------------------------------------------
-    //Description:
-    //    Queries the provided device and checks the properties to see if it supports graphics 
-    //    command queues. (??is there a GPU that doesn't??)
-    //Creator:    John Cox, 10/2018
-    //---------------------------------------------------------------------------------------------*/
-    //QueueFamilyIndices FindQueueFamilies(VkPhysicalDevice device) {
-    //    QueueFamilyIndices indices;
-
-    //    uint32_t queueFamilyCount = 0;
-    //    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
-    //    std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-    //    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
-
-    //    uint32_t i = 0;
-    //    for (const auto &queueFamily : queueFamilies) {
-    //        bool exists = queueFamily.queueCount > 0;
-    //        bool supportsGraphics = (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0;
-    //        if (exists && supportsGraphics) {
-    //            indices.graphicsFamily = i;
-    //            break;
-    //        }
-    //        i++;
-    //    }
-    //    return indices;
-    //}
 
     /*---------------------------------------------------------------------------------------------
     Description:
