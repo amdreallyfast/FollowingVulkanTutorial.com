@@ -1,11 +1,12 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <iostream>
-#include <sstream>  // for format-capable stringstream
-#include <iomanip>  // for std::setfill(...) and std::setw(...)
+#include <sstream>      // for format-capable stringstream
+#include <iomanip>      // for std::setfill(...) and std::setw(...)
 #include <vector>
-#include <set> //??why??
-#include <optional>
+#include <set>          // for eliminating potentially duplicate stuff from multiple objects
+#include <optional>     // for return values that may not exist
+#include <algorithm>    // std::min/max
 
 //VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
 //    VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
@@ -165,8 +166,8 @@ Creator:    John Cox, 10/2018
 class HelloTriangleApplication {
 private:
     GLFWwindow *mWindow = nullptr;
-    int mWindowWidth = 800;
-    int mWindowHeight = 600;
+    uint32_t mWindowWidth = 800;
+    uint32_t mWindowHeight = 600;
 
 #ifdef NDEBUG
     const bool mEnableValidationLayers = false;
@@ -182,6 +183,14 @@ private:
     VkQueue mGraphicsQueue = VK_NULL_HANDLE;
     VkSurfaceKHR mSurface = VK_NULL_HANDLE;
     VkQueue mPresentationQueue = VK_NULL_HANDLE;
+    VkSwapchainKHR mSwapChain = VK_NULL_HANDLE;
+    std::vector<VkImage> mSwapChainImages;
+    VkFormat mSwapChainImageFormat = VkFormat::VK_FORMAT_UNDEFINED;
+    VkExtent2D mSwapChainExtent{};
+
+    const std::vector<const char *> mRequiredDeviceExtensions {
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME
+    };
 
     /*---------------------------------------------------------------------------------------------
     Description:
@@ -199,6 +208,27 @@ private:
         bool IsComplete() {
             return graphicsFamily.has_value() && presentationFamily.has_value();
         }
+    };
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        Windows are containers. We don't draw to windows. Window managers provide a "surface" that 
+        is displayed on top of the window (and that usually encompasses less than the whol thing 
+        so that we can have a border, etc.). We draw to these surfaces. To use it properly, we 
+        must understand what our chosen widnow manager's surface support is capable of doing.
+
+        Those details are stored here.
+    Creator:    John Cox, 11/2018
+    ---------------------------------------------------------------------------------------------*/
+    struct SwapChainSupportDetails {
+        // min/max image count, min/max image width, min/max image height, others
+        VkSurfaceCapabilitiesKHR capabilities;
+
+        // pixel format and color space for each image
+        std::vector<VkSurfaceFormatKHR> formats;
+
+        // ??presentation modes?? for each image
+        std::vector<VkPresentModeKHR> presentModes;
     };
 
 public:
@@ -298,6 +328,8 @@ private:
         }
     }
 
+
+
     /*---------------------------------------------------------------------------------------------
     Description:
         The function called by VK_EXT_debug_utils callback object.
@@ -390,6 +422,17 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
+        The window in an OS-specific container. You can't draw to a "window" object as designed in modern OS'. It's become a graphical paradigm that a window will have a "surface" object instead, a ??what is it??
+    Creator:    John Cox, 10/2018
+    ---------------------------------------------------------------------------------------------*/
+    void CreateSurface() {
+        if (glfwCreateWindowSurface(mInstance, mWindow, nullptr, &mSurface) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create window surface");
+        }
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
         Queries the provided device and checks the properties to see if it supports graphics
         command queues. (??is there a GPU that doesn't??)
     Creator:    John Cox, 10/2018
@@ -426,23 +469,172 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
+        Self-explanatory.
+        TODO: ??make into a "Get" function instead? shove "Required" items into a namespace or another file??
+    Creator:    John Cox, 11/2018
+    ---------------------------------------------------------------------------------------------*/
+    bool CheckDeviceExtensionsSupport(VkPhysicalDevice device) {
+        uint32_t extensionCount = 0;
+        vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
+
+        std::vector<VkExtensionProperties> availableExtensions(extensionCount);
+        vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
+
+        std::set<std::string> requiredExtensions(mRequiredDeviceExtensions.begin(), mRequiredDeviceExtensions.end());
+        for (const auto &ext : availableExtensions) {
+            requiredExtensions.erase(ext.extensionName);
+        }
+
+        // if empty, all required extensions have been found
+        return requiredExtensions.empty();
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        If the preferred (??why??) format (B8G8R8A8 nonlinear (??what??)) is available, return 
+        that. Else return the first available supported image format.
+    Creator:    John Cox, 11/2018
+    ---------------------------------------------------------------------------------------------*/
+    VkSurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &availableFormats) {
+        if (availableFormats.size() == 1 && availableFormats.front().format == VK_FORMAT_UNDEFINED) {
+            return {
+                VK_FORMAT_B8G8R8A8_UNORM,
+                VK_COLOR_SPACE_SRGB_NONLINEAR_KHR
+            };
+        }
+
+        for (const auto &available : availableFormats) {
+            if (available.format == VK_FORMAT_B8G8R8A8_UNORM &&
+                available.colorSpace == VK_COLORSPACE_SRGB_NONLINEAR_KHR) {
+                return available;
+            }
+        }
+
+        // preferred format not available, so just use the first supported; should be good enough
+        return availableFormats.front();
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        If the preferred presentation mode ("mailbox") is available, return that. It can be used 
+        to implement a triple buffer, which makes it preferred.
+        
+        The next best option is "FIFO" (simple double buffer), which is always available, but the 
+        tutorial says that not all drivers properly support it, so the "next best" is "immediate".
+        "Immediate" will shove rendered image to the surface without waiting for a screen refresh. 
+        This will likely cause screen tearing, but is better than a poorly-supported double-buffer (??you sure??)
+
+        Last resort: "FIFO". This should always be available.
+    Creator:    John Cox, 11/2018
+    ---------------------------------------------------------------------------------------------*/
+    VkPresentModeKHR ChooseSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes) {
+        VkPresentModeKHR bestMode = VK_PRESENT_MODE_FIFO_KHR;
+
+        for (const auto &available : availablePresentModes) {
+            if (available == VK_PRESENT_MODE_MAILBOX_KHR) {
+                return available;
+            }
+            else if (available == VK_PRESENT_MODE_IMMEDIATE_KHR) {
+                // don't return just yet in case we find "mailbox" in a later iteration
+                bestMode = available;
+            }
+        }
+
+        return bestMode;
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        "Extent" is the resolution (width, height) of the images that are put into the swap chain.
+        This is either slightly smaller than the window's resolution (windowed mode) or equal to 
+        it (usually full screen mode).
+
+        Note: Some window managers (GLFW included) allow the extent of the image to be 
+        automatically selected by the window manager by providing maximum uint32. If the surface 
+        did not provide this capability, clamp the resolution to the size of the window.
+    Creator:    John Cox, 11/2018
+    ---------------------------------------------------------------------------------------------*/
+    VkExtent2D ChooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities) {
+        if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
+            // window manager will select image extent for us
+            //??will "height" be MAX UINT 32 as well??
+            return capabilities.currentExtent;
+        }
+
+        // manually clamp to window size
+        // Note: Surface capability can be ??how big? how small??
+        uint32_t width = std::max(capabilities.minImageExtent.width, std::min(capabilities.maxImageExtent.width, mWindowWidth));
+        uint32_t height = std::max(capabilities.minImageExtent.height, std::min(capabilities.maxImageExtent.height, mWindowHeight));
+        return VkExtent2D{ width, height };
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        Unlike OpenGL, which has a default framebuffer, we have to set one up manually. In Vulkan, 
+        the buffer of images that the surface will pull from to swap out the current image is 
+        called a "swap chain". Need to make sure that the surface can pull from a buffer created 
+        by this device.
+
+        Note: Not all GPUs can do this. Computers made for blade PCs in a server rack may not even 
+        have an output, and so it is unlikely that the creator of that GPU's driver would have 
+        even bothered to set it up to talk with the OS' window surfaces. (??is this right??)
+    Creator:    John Cox, 11/2018
+    ---------------------------------------------------------------------------------------------*/
+    SwapChainSupportDetails QuerySwapChainSupport(VkPhysicalDevice device) {
+        SwapChainSupportDetails details;
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, mSurface, &details.capabilities);
+
+        uint32_t formatCount = 0;
+        vkGetPhysicalDeviceSurfaceFormatsKHR(device, mSurface, &formatCount, nullptr);
+        if (formatCount != 0) {
+            details.formats.resize(formatCount);
+            vkGetPhysicalDeviceSurfaceFormatsKHR(device, mSurface, &formatCount, details.formats.data());
+        }
+
+        uint32_t presentModeCount = 0;
+        vkGetPhysicalDeviceSurfacePresentModesKHR(device, mSurface, &presentModeCount, nullptr);
+        if (presentModeCount != 0) {
+            details.presentModes.resize(presentModeCount);
+            vkGetPhysicalDeviceSurfacePresentModesKHR(device, mSurface, &presentModeCount, details.presentModes.data());
+        }
+
+        return details;
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
         Checks if the necessary features to run this program are available on the provided GPU.
     Creator:    John Cox, 10/2018
     ---------------------------------------------------------------------------------------------*/
     bool IsDeviceSuitable(VkPhysicalDevice device) {
         VkPhysicalDeviceProperties deviceProperties;
         vkGetPhysicalDeviceProperties(device, &deviceProperties);
+        bool isDiscreteGpu = (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU);
 
         VkPhysicalDeviceFeatures deviceFeatures;
         vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
-        
-        QueueFamilyIndices indices = FindQueueFamilies(device);
+        bool supportsGeometryShader = deviceFeatures.geometryShader;
 
-        bool success =
-            deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU &&
-            deviceFeatures.geometryShader &&
-            indices.IsComplete();
-        return success;
+        QueueFamilyIndices indices = FindQueueFamilies(device);
+        bool hasAllRequiredQueueFamilyIndices = indices.IsComplete();
+
+        bool deviceExtensionsSupported = CheckDeviceExtensionsSupport(device);
+
+        bool swapChainAdequate = false;
+        if (deviceExtensionsSupported) {
+            SwapChainSupportDetails swapChainSupport = QuerySwapChainSupport(device);
+            swapChainAdequate = 
+                !swapChainSupport.formats.empty() && 
+                !swapChainSupport.presentModes.empty();
+        }
+
+        bool suitable =
+            isDiscreteGpu &&
+            supportsGeometryShader &&
+            hasAllRequiredQueueFamilyIndices &&
+            deviceExtensionsSupported &&
+            swapChainAdequate;
+        return suitable;
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -475,17 +667,8 @@ private:
     Creator:    John Cox, 10/2018
     ---------------------------------------------------------------------------------------------*/
     void CreateLogicalDevice() {
-        //// need 1 "create info" for each queue, but only have the graphics command queue right now
-        //// Note: Command buffer scheduling priority is 0-1 float. Scheduling priority is required 
-        //// even if there is only one queue. In this case, it won't matter what the priority is, 
-        //// but we'll set it at 1 (highest) anyway.
         float queuePriority = 1.0f;
         QueueFamilyIndices indices = FindQueueFamilies(mPhysicalDevice);
-        //VkDeviceQueueCreateInfo queueCreateInfo{};
-        //queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-        //queueCreateInfo.queueFamilyIndex = indices.graphicsFamily.value();
-        //queueCreateInfo.queueCount = 1;
-        //queueCreateInfo.pQueuePriorities = &queuePriority;
 
         std::vector<VkDeviceQueueCreateInfo> deviceCommandQueuesCreateInfo;
 
@@ -503,8 +686,6 @@ private:
             deviceCommandQueuesCreateInfo.push_back(createInfo);
         }
 
-
-
         // don't need any features yet, so leave it blank for now
         VkPhysicalDeviceFeatures deviceFeatures{};
 
@@ -513,14 +694,8 @@ private:
         createInfo.queueCreateInfoCount = static_cast<uint32_t>(deviceCommandQueuesCreateInfo.size());
         createInfo.pQueueCreateInfos = deviceCommandQueuesCreateInfo.data();
         createInfo.pEnabledFeatures = &deviceFeatures;
-        //createInfo.enabledExtensionCount = 0;
-        //if (mEnableValidationLayers) {
-        //    createInfo.enabledLayerCount = static_cast<uint32_t>(mRequiredValidationLayers.size());
-        //    createInfo.ppEnabledLayerNames = mRequiredValidationLayers.data();
-        //}5
-        //else {
-        //    createInfo.enabledLayerCount = 0;
-        //}
+        createInfo.enabledExtensionCount = static_cast<uint32_t>(mRequiredDeviceExtensions.size());
+        createInfo.ppEnabledExtensionNames = mRequiredDeviceExtensions.data();
 
         if (vkCreateDevice(mPhysicalDevice, &createInfo, nullptr, &mLogicalDevice) != VK_SUCCESS) {
             throw std::runtime_error("failed to create logical device");
@@ -539,13 +714,102 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        ??
-    Creator:    John Cox, 10/2018
+    ??
+    Creator:    John Cox, 11/2018
     ---------------------------------------------------------------------------------------------*/
-    void CreateSurface() {
-        if (glfwCreateWindowSurface(mInstance, mWindow, nullptr, &mSurface) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create window surface");
+    void CreateSwapChain() {
+        SwapChainSupportDetails swapChainSupport = QuerySwapChainSupport(mPhysicalDevice);
+        VkSurfaceFormatKHR surfaceFormat = ChooseSwapSurfaceFormat(swapChainSupport.formats);
+        VkPresentModeKHR presentMode = ChooseSwapPresentMode(swapChainSupport.presentModes);
+        VkExtent2D extent = ChooseSwapExtent(swapChainSupport.capabilities);
+
+        //??
+        //??minimum number of images to function properly? why would there need to be a "minimum" sized backlog of images?
+        uint32_t createMinImageCount = swapChainSupport.capabilities.minImageCount + 1;
+        if (swapChainSupport.capabilities.maxImageCount == 0) {
+            // indicates no limit for swap chain size aside from memory
         }
+        else {
+            // there is a constraint aside from memory
+            // Note: The count is unsigned, so implicitly this means "> 0".
+            //??how could minImageCount +1 >= maxImageCount? shouldn't they be far apart??
+            if (createMinImageCount > swapChainSupport.capabilities.maxImageCount) {
+                createMinImageCount = swapChainSupport.capabilities.maxImageCount;
+            }
+            else {
+                // no problem
+            }
+        }
+
+        // 1 layer per image in the swapchain unless doing stereoscopic 3D, in which case there 
+        // will be 2 layers, one for each eye, that get pushed out the swap chain simultaneously
+        uint32_t numImageLayers = 1;
+
+        // will draw directly to an image in the swap chain
+        // Note: If doing post-processing, will need to use VK_IMAGE_USAGE_TRANSFER_DST_BIT, 
+        // create another (??swap chain? image? what??) with VK_IMAGE_USAGE_TRANSFER_SRC_BIT, and 
+        // use a memory operation to transfer the rendered image to another swap chain image.
+        VkImageUsageFlags imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+
+        VkSwapchainCreateInfoKHR createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+        createInfo.surface = mSurface;
+        createInfo.minImageCount = createMinImageCount;
+        createInfo.imageFormat = surfaceFormat.format;
+        createInfo.imageColorSpace = surfaceFormat.colorSpace;
+        createInfo.imageExtent = extent;
+        createInfo.imageArrayLayers = numImageLayers;
+        createInfo.imageUsage = imageUsage;
+
+        //???what does this sentence mean: "we need to specify how to handle swap chain images that will be used across multiple queue families"??
+        QueueFamilyIndices indices = FindQueueFamilies(mPhysicalDevice);
+        if (indices.graphicsFamily != indices.presentationFamily) {
+            uint32_t queueFamilyIndices[]{
+                indices.graphicsFamily.value(),
+                indices.presentationFamily.value()
+            };
+            createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+            createInfo.queueFamilyIndexCount = 2;
+            createInfo.pQueueFamilyIndices = queueFamilyIndices;
+        }
+        else {
+            createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+            createInfo.queueFamilyIndexCount = 0;       //??optional??
+            createInfo.pQueueFamilyIndices = nullptr;   //??optional??
+        }
+
+        //??
+        createInfo.preTransform = swapChainSupport.capabilities.currentTransform;
+
+        // set to opaque unless you want to make the window surface transluscent (might want to do 
+        // this in mobile GUIs)
+        createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+
+        createInfo.presentMode = presentMode;
+        
+        // if a region of the surface is not visible (ex: another window is in front of this one), discard the obscured pixels
+        createInfo.clipped = VK_TRUE;
+
+        // Note: If a swap chain becomes invalid at runtime (ex: window resized, so image extents 
+        // are no longer valid), then need to recreate the swap chain from scratch. We'll deal 
+        // with that later. For now (11/3/2018), our GLFW window size is fixed.
+        createInfo.oldSwapchain = VK_NULL_HANDLE;
+
+        if (vkCreateSwapchainKHR(mLogicalDevice, &createInfo, nullptr, &mSwapChain) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create swap chain");
+        }
+
+        // Note: Cannot create space for the images in the swap chain prior to creating it because 
+        // the create info only specifies "minimum" image count. It is allowed to create more than 
+        // that.(??why would it??)
+        uint32_t imageCount = 0;
+        vkGetSwapchainImagesKHR(mLogicalDevice, mSwapChain, &imageCount, nullptr);
+        mSwapChainImages.resize(imageCount);
+        vkGetSwapchainImagesKHR(mLogicalDevice, mSwapChain, &imageCount, mSwapChainImages.data());
+
+        // store these too for later
+        mSwapChainImageFormat = surfaceFormat.format;
+        mSwapChainExtent = extent;
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -578,6 +842,7 @@ private:
         CreateSurface();
         PickPhysicalDevice();
         CreateLogicalDevice();
+        CreateSwapChain();
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -598,9 +863,12 @@ private:
     ---------------------------------------------------------------------------------------------*/
     void Cleanup() {
         if (mCallback != 0) {
+            // Note: This is an externally synchronized object (that is, created at runtime in a 
+            // forked thread), and so *must* not be called when a callback is active. (??how to enforce??)
             DestroyDebugUtilsMessengEXT(mInstance, mCallback, nullptr);
         }
-
+        
+        vkDestroySwapchainKHR(mLogicalDevice, mSwapChain, nullptr);
         vkDestroyDevice(mLogicalDevice, nullptr);
         vkDestroySurfaceKHR(mInstance, mSurface, nullptr);
         vkDestroyInstance(mInstance, nullptr);
