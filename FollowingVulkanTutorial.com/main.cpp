@@ -314,7 +314,7 @@ private:
         const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
         void *pUserData) {
         
-        std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl << std::flush;
+        std::cerr << "validation layer [" << pCallbackData->pMessageIdName << "]: " << pCallbackData->pMessage << std::endl << std::flush;
         return VK_FALSE;
     }
 
@@ -387,10 +387,10 @@ private:
             throw std::runtime_error("failed to create instance");
         }
 
-        //// and create the debug messenger itself
-        //if (CreateDebugUtilsMessengerEXT(mInstance, &debugCreateInfo, nullptr, &mCallback) != VK_SUCCESS) {
-        //    throw std::runtime_error("failed to set up debug callback");
-        //}
+        // and create the debug messenger itself
+        if (CreateDebugUtilsMessengerEXT(mInstance, &debugCreateInfo, nullptr, &mCallback) != VK_SUCCESS) {
+            throw std::runtime_error("failed to set up debug callback");
+        }
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -623,11 +623,11 @@ private:
     Creator:    John Cox, 10/2018
     ---------------------------------------------------------------------------------------------*/
     void Cleanup() {
-        if (mCallback != 0) {
-            DestroyDebugUtilsMessengEXT(mInstance, mCallback, nullptr);
-        }
+        //if (mCallback != 0) {
+        //    DestroyDebugUtilsMessengEXT(mInstance, mCallback, nullptr);
+        //}
 
-        vkDestroyDevice(mLogicalDevice, nullptr);
+        //vkDestroyDevice(mLogicalDevice, nullptr);
         vkDestroySurfaceKHR(mInstance, mSurface, nullptr);
         vkDestroyInstance(mInstance, nullptr);
         glfwDestroyWindow(mWindow);
