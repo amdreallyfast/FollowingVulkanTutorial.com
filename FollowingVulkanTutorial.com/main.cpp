@@ -148,7 +148,7 @@ void DestroyDebugUtilsMessengEXT(
     VkDebugUtilsMessengerEXT callback,
     const VkAllocationCallbacks *pAllocator) {
 
-    auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkDestroyDebugUTilsMessengerEXT");
+    auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
     if (func != nullptr) {
         return func(instance, callback, pAllocator);
     }
@@ -195,11 +195,6 @@ private:
 
         // can the GPU's driver draw to the surface that we're using?
         std::optional<uint32_t> presentationFamily; //??"present family"??
-
-        //void Reset() {
-        //    graphicsFamily.reset();
-        //    presentationFamily.reset();
-        //}
 
         bool IsComplete() {
             return graphicsFamily.has_value() && presentationFamily.has_value();
@@ -425,28 +420,7 @@ private:
             if (indices.IsComplete()) {
                 break;
             }
-            //else {
-            //    indices.Reset();
-            //}
         }
-
-        //uint32_t queueFamilyIndexCounter = 0;
-        //for (const auto &queueFamily : queueFamilies) {
-        //    bool queueExists = queueFamily.queueCount > 0;
-
-        //    bool supportsGraphics = (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0;
-        //    if (queueExists && supportsGraphics) {
-        //        indices.graphicsFamily = queueFamilyIndexCounter;
-        //    }
-
-        //    VkBool32 surfaceSupported = false;    //??"present support"? what does that mean??
-        //    vkGetPhysicalDeviceSurfaceSupportKHR(device, queueFamilyIndexCounter, mSurface, &surfaceSupported);
-        //    if (queueExists && surfaceSupported) {
-        //        indices.presentFamily = queueFamilyIndexCounter
-        //    }
-
-        //    queueFamilyIndexCounter++;
-        //}
         return indices;
     }
 
@@ -623,11 +597,11 @@ private:
     Creator:    John Cox, 10/2018
     ---------------------------------------------------------------------------------------------*/
     void Cleanup() {
-        //if (mCallback != 0) {
-        //    DestroyDebugUtilsMessengEXT(mInstance, mCallback, nullptr);
-        //}
+        if (mCallback != 0) {
+            DestroyDebugUtilsMessengEXT(mInstance, mCallback, nullptr);
+        }
 
-        //vkDestroyDevice(mLogicalDevice, nullptr);
+        vkDestroyDevice(mLogicalDevice, nullptr);
         vkDestroySurfaceKHR(mInstance, mSurface, nullptr);
         vkDestroyInstance(mInstance, nullptr);
         glfwDestroyWindow(mWindow);
