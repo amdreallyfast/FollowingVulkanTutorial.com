@@ -158,6 +158,31 @@ void DestroyDebugUtilsMessengEXT(
     }
 }
 
+#include <fstream>
+#include <streambuf>
+#include <string>
+#include <cerrno>
+
+/*-------------------------------------------------------------------------------------------------
+Description:
+    Reads an entire file into a string and returns it.
+    
+    Source: http://insanecoding.blogspot.com/2011/11/how-to-read-in-file-in-c.html
+Creator:    John Cox, 11/2018
+-------------------------------------------------------------------------------------------------*/
+std::string ReadFile(const std::string &file_path) {
+    std::ifstream in(file_path.c_str(), std::ios::in | std::ios::binary);
+    if (in) {
+        return(std::string(
+            std::istreambuf_iterator<char>(in), 
+            std::istreambuf_iterator<char>()));
+    }
+    
+    // ??std::runtime_error instead??
+    throw(errno);
+}
+
+
 /*-------------------------------------------------------------------------------------------------
 Description:
     The class for this tutorial series.
@@ -863,6 +888,7 @@ private:
             createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
             createInfo.image = mSwapChainImages.at(i);
             createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;    // 2D texture
+            createInfo.format = mSwapChainImageFormat;
             
             // we could mess with the mappings of components.r, components.g, etc. and set all 
             // color components in the view to be "red" (VK_COMPONENT_SWIZZLE_R), thus giving us a 
@@ -888,6 +914,49 @@ private:
                 throw std::runtime_error("failed to create image views");
             }
         }
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        Governs the creation of all stages of the graphics pipeline.
+
+        Some stages are fixed, and others are programmable. 
+        - The "fixed" stages can be configured with a set number of options from the SDK.
+        - The "programmable" stages can be set up with a shader or be skipped entirely.
+
+        From the tutorial:
+        - The input assembler collects the raw vertex data from the buffers you specify and may 
+            also use an index buffer to repeat certain elements without having to duplicate the 
+            vertex data itself. This stage is FIXED.
+        - The vertex shader is run for every vertex and generally applies transformations to turn 
+            vertex positions from model space to screen space. It also passes per-vertex data down 
+            the pipeline. This stage is PROGRAMMABLE.
+        - The tessellation shaders allow you to subdivide geometry based on certain rules to 
+            increase the mesh quality. This is often used to make surfaces like brick walls and 
+            staircases look less flat when they are nearby. This stage is PROGRAMMABLE.
+        - The geometry shader is run on every primitive (triangle, line, point) and can discard it 
+            or output more primitives than came in. This is similar to the tessellation shader, 
+            but much more flexible. However, it is not used much in today's applications because 
+            the performance is not that good on most graphics cards except for Intel's integrated 
+            GPUs. This stage is PROGRAMMABLE.
+        - The rasterization stage discretizes the primitives into fragments. These are the pixel 
+            elements that they fill on the framebuffer. Any fragments that fall outside the screen 
+            are discarded and the attributes outputted by the vertex shader are interpolated 
+            across the fragments, as shown in the figure. Usually the fragments that are behind 
+            other primitive fragments are also discarded here because of depth testing. This stage
+            is FIXED.
+        - The fragment shader is invoked for every fragment that survives and determines which 
+            framebuffer(s) the fragments are written to and with which color and depth values. It 
+            can do this using the interpolated data from the vertex shader, which can include 
+            things like texture coordinates and normals for lighting. This stage is PROGRAMMABLE.
+        - The color blending stage applies operations to mix different fragments that map to the 
+            same pixel in the framebuffer. Fragments can simply overwrite each other, add up or be 
+            mixed based upon transparency. This stage is FIXED.
+    Creator:    John Cox, 11/2018
+    ---------------------------------------------------------------------------------------------*/
+    void CreateGraphicsPipeline() {
+        auto vertShaderCode = ReadFile("shaders/vert.spv");
+        auto fragShaderCode = ReadFile("shaders/frag.spv");
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -921,6 +990,8 @@ private:
         PickPhysicalDevice();
         CreateLogicalDevice();
         CreateSwapChain();
+        CreateImageViews();
+        CreateGraphicsPipeline();
     }
 
     /*---------------------------------------------------------------------------------------------
