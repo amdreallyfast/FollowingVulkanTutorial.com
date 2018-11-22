@@ -187,6 +187,7 @@ private:
     std::vector<VkImage> mSwapChainImages;
     VkFormat mSwapChainImageFormat = VkFormat::VK_FORMAT_UNDEFINED;
     VkExtent2D mSwapChainExtent{};
+    std::vector<VkImageView> mSwapChainImageViews;
 
     const std::vector<const char *> mRequiredDeviceExtensions {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME
@@ -730,8 +731,9 @@ private:
     /*---------------------------------------------------------------------------------------------
     Description:
         Rather than the simple "swap" functionality of OpenGL, which had a default "framebuffer" 
-        with "front" and "back" buffers (where "buffer" means "a pixel array"), Vulkan has a 
-        "swap chain", which is a set of image buffers that can be swapped out as desired. This "chain" (??is it a linked list??) has more flexibility than OpenGL's framebuffer. 
+        with "front" and "back" buffers (where "buffer" means "a pixel array"), Vulkan's 
+        framebuffer requires more setup and puts in place a "swap chain", which is a set of image 
+        buffers that can be swapped out as desired. This "chain" (??is it a linked list??) has more flexibility than OpenGL's framebuffer. 
         
         There is a minimum and maximum size to this swap chain. When the window manager's creators 
         implemented Vulkan support on the window's drawing surface, they determined these values. 
@@ -825,7 +827,7 @@ private:
         // with that later. For now (11/3/2018), our GLFW window size is fixed.
         createInfo.oldSwapchain = VK_NULL_HANDLE;
 
-        // all that to lead up to this
+        // all that leads up to this
         if (vkCreateSwapchainKHR(mLogicalDevice, &createInfo, nullptr, &mSwapChain) != VK_SUCCESS) {
             throw std::runtime_error("failed to create swap chain");
         }
@@ -841,6 +843,51 @@ private:
         // also store these for later
         mSwapChainImageFormat = surfaceFormat.format;
         mSwapChainExtent = extent;
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        Creates an "image view" object for each image in the swap chain. A "view" tells Vulkan how 
+        to handle the array of data that we generically call "image". Not every "image" is a 
+        finished drawing though. It may be a rendering from a particular point of view and will be 
+        used as a texture, or maybe it is a lighting map with simple intensity values, or maybe it 
+        really is a finished array of pixel colors.
+    Creator:    John Cox, 11/2018
+    ---------------------------------------------------------------------------------------------*/
+    void CreateImageViews() {
+        //??is mSwapChainImages just a temporary value? can I delete it an only use it here??
+        mSwapChainImageViews.resize(mSwapChainImages.size());
+
+        for (size_t i = 0; i < mSwapChainImages.size(); i++) {
+            VkImageViewCreateInfo createInfo{};
+            createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+            createInfo.image = mSwapChainImages.at(i);
+            createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;    // 2D texture
+            
+            // we could mess with the mappings of components.r, components.g, etc. and set all 
+            // color components in the view to be "red" (VK_COMPONENT_SWIZZLE_R), thus giving us a 
+            // monochrome red shade, or we could leave them at their default values 
+            // (VK_COMPONENT_SWIZZLE_IDENTITY = 0), which is what we're going to do here 
+            createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+            createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+            createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+            createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+
+            // using the image as a simple color texture target ("target" being what is rendered 
+            // to) with no mipmapping 
+            // Note: Only 1 layer since we are not doing steroscopic 3D (that needs 2).
+            createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            createInfo.subresourceRange.baseMipLevel = 0;
+            createInfo.subresourceRange.levelCount = 1;
+            createInfo.subresourceRange.baseArrayLayer = 0;
+            createInfo.subresourceRange.layerCount = 1;
+
+            // swap chain is created from the logical device, and so the image views of the swap 
+            // chain's images are also created from logical device
+            if (vkCreateImageView(mLogicalDevice, &createInfo, nullptr, &mSwapChainImageViews.at(i)) != VK_SUCCESS ) {
+                throw std::runtime_error("failed to create image views");
+            }
+        }
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -893,15 +940,19 @@ private:
     Creator:    John Cox, 10/2018
     ---------------------------------------------------------------------------------------------*/
     void Cleanup() {
+        for (auto &imageView : mSwapChainImageViews) {
+            vkDestroyImageView(mLogicalDevice, imageView, nullptr);
+        }
+        vkDestroySwapchainKHR(mLogicalDevice, mSwapChain, nullptr);
+        vkDestroyDevice(mLogicalDevice, nullptr);
+        vkDestroySurfaceKHR(mInstance, mSurface, nullptr);
+
         if (mCallback != 0) {
             // Note: This is an externally synchronized object (that is, created at runtime in a 
             // forked thread), and so *must* not be called when a callback is active. (??how to enforce??)
             DestroyDebugUtilsMessengEXT(mInstance, mCallback, nullptr);
         }
-        
-        vkDestroySwapchainKHR(mLogicalDevice, mSwapChain, nullptr);
-        vkDestroyDevice(mLogicalDevice, nullptr);
-        vkDestroySurfaceKHR(mInstance, mSurface, nullptr);
+
         vkDestroyInstance(mInstance, nullptr);
         glfwDestroyWindow(mWindow);
         glfwTerminate();
