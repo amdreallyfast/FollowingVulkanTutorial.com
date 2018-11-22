@@ -213,9 +213,9 @@ private:
     /*---------------------------------------------------------------------------------------------
     Description:
         Windows are containers. We don't draw to windows. Window managers provide a "surface" that 
-        is displayed on top of the window (and that usually encompasses less than the whol thing 
+        is displayed on top of the window (and that usually encompasses less than the whole thing 
         so that we can have a border, etc.). We draw to these surfaces. To use it properly, we 
-        must understand what our chosen widnow manager's surface support is capable of doing.
+        must understand what our chosen window manager's surface support is capable of doing.
 
         Those details are stored here.
     Creator:    John Cox, 11/2018
@@ -516,31 +516,41 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        If the preferred presentation mode ("mailbox") is available, return that. It can be used 
-        to implement a triple buffer, which makes it preferred.
-        
-        The next best option is "FIFO" (simple double buffer), which is always available, but the 
-        tutorial says that not all drivers properly support it, so the "next best" is "immediate".
-        "Immediate" will shove rendered image to the surface without waiting for a screen refresh. 
-        This will likely cause screen tearing, but is better than a poorly-supported double-buffer (??you sure??)
+        Rankings:
+        (1) Mailbox
+        (2) Immediate
+        (3) FIFO
 
-        Last resort: "FIFO". This should always be available.
+        Note: The tutorial places "Immediate" above "FIFO", saying "Unfortunately some drivers 
+        currently don't properly support VK_PRESENT_MODE_FIFO_KHR, so we should prefer 
+        VK_PRESENT_MODE_IMMEDIATE_KHR if VK_PRESENT_MODE_MAILBOX_KHR is not available".
+
+        Mailbox can be used to implement a triple buffer => first choice.
+        
+        FIFO is a simple double buffer, reminiscient of OpenGL's size 2 framebuffer. It is
+        guaranteed to be an option.
+
+        Immediate shoves finished images to screen without waiting for screen refresh. This can
+        cause tearing => last choice.
     Creator:    John Cox, 11/2018
     ---------------------------------------------------------------------------------------------*/
     VkPresentModeKHR ChooseSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes) {
-        VkPresentModeKHR bestMode = VK_PRESENT_MODE_FIFO_KHR;
+        bool immediateAvailable = false;
 
         for (const auto &available : availablePresentModes) {
             if (available == VK_PRESENT_MODE_MAILBOX_KHR) {
+                // found most preferred option; don't bother with the rest of the loop
                 return available;
             }
             else if (available == VK_PRESENT_MODE_IMMEDIATE_KHR) {
-                // don't return just yet in case we find "mailbox" in a later iteration
-                bestMode = available;
+                immediateAvailable = true;
             }
         }
 
-        return bestMode;
+        if (immediateAvailable) {
+            return VK_PRESENT_MODE_IMMEDIATE_KHR;
+        }
+        return VK_PRESENT_MODE_FIFO_KHR;
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -550,14 +560,19 @@ private:
         it (usually full screen mode).
 
         Note: Some window managers (GLFW included) allow the extent of the image to be 
-        automatically selected by the window manager by providing maximum uint32. If the surface 
-        did not provide this capability, clamp the resolution to the size of the window.
+        automatically selected by the window manager. If the window manager did not automatically 
+        select the resolution (either because it couldn't or for some reason it just didn't), then 
+        the "extent" is set to maximum uint32. In that case, manually clamp the resolution to the 
+        size of the window.
     Creator:    John Cox, 11/2018
     ---------------------------------------------------------------------------------------------*/
     VkExtent2D ChooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities) {
+        if (capabilities.currentExtent.width == std::numeric_limits<uint32_t>::max()) {
+            printf("");
+        }
+
         if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
             // window manager will select image extent for us
-            //??will "height" be MAX UINT 32 as well??
             return capabilities.currentExtent;
         }
 
@@ -714,7 +729,13 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-    ??
+        Rather than the simple "swap" functionality of OpenGL, which had a default "framebuffer" 
+        with "front" and "back" buffers (where "buffer" means "a pixel array"), Vulkan has a 
+        "swap chain", which is a set of image buffers that can be swapped out as desired. This "chain" (??is it a linked list??) has more flexibility than OpenGL's framebuffer. 
+        
+        There is a minimum and maximum size to this swap chain. When the window manager's creators 
+        implemented Vulkan support on the window's drawing surface, they determined these values. 
+        We just need to query them.
     Creator:    John Cox, 11/2018
     ---------------------------------------------------------------------------------------------*/
     void CreateSwapChain() {
@@ -723,8 +744,10 @@ private:
         VkPresentModeKHR presentMode = ChooseSwapPresentMode(swapChainSupport.presentModes);
         VkExtent2D extent = ChooseSwapExtent(swapChainSupport.capabilities);
 
-        //??
-        //??minimum number of images to function properly? why would there need to be a "minimum" sized backlog of images?
+        // attempt to allocate enough images for a triple buffer
+        // Note: Min image count should always be 2 (minimum required for present mode FIFO 
+        // (simple double buffer), which is always available). For a triple buffer, we want the 
+        // min image count to be 3.
         uint32_t createMinImageCount = swapChainSupport.capabilities.minImageCount + 1;
         if (swapChainSupport.capabilities.maxImageCount == 0) {
             // indicates no limit for swap chain size aside from memory
@@ -732,12 +755,12 @@ private:
         else {
             // there is a constraint aside from memory
             // Note: The count is unsigned, so implicitly this means "> 0".
-            //??how could minImageCount +1 >= maxImageCount? shouldn't they be far apart??
             if (createMinImageCount > swapChainSupport.capabilities.maxImageCount) {
+                // it seems that max image count == min image count; clamp "min" to prevent errors
                 createMinImageCount = swapChainSupport.capabilities.maxImageCount;
             }
             else {
-                // no problem
+                // no problem with minimum 3 images
             }
         }
 
@@ -746,9 +769,10 @@ private:
         uint32_t numImageLayers = 1;
 
         // will draw directly to an image in the swap chain
-        // Note: If doing post-processing, will need to use VK_IMAGE_USAGE_TRANSFER_DST_BIT, 
-        // create another (??swap chain? image? what??) with VK_IMAGE_USAGE_TRANSFER_SRC_BIT, and 
-        // use a memory operation to transfer the rendered image to another swap chain image.
+        // Note: If doing post-processing, will need to create one swap chain with 
+        // VK_IMAGE_USAGE_TRANSFER_SRC_BIT, create another swap chain with 
+        // VK_IMAGE_USAGE_TRANSFER_DST_BIT, and use a memory operation to transfer the rendered 
+        // image from the "source" swap chain to the "destination" swap chain.
         VkImageUsageFlags imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
         VkSwapchainCreateInfoKHR createInfo{};
@@ -763,7 +787,14 @@ private:
 
         //???what does this sentence mean: "we need to specify how to handle swap chain images that will be used across multiple queue families"??
         QueueFamilyIndices indices = FindQueueFamilies(mPhysicalDevice);
-        if (indices.graphicsFamily != indices.presentationFamily) {
+        if (indices.graphicsFamily == indices.presentationFamily) {
+            // Note: Default "exclusive", meaning that only one queue family can access the swap 
+            // chain at a time. This allows Vulkan to optimize and is thus the most efficient.
+        }
+        else {
+            // both the graphics queue family and the presentation queue family need to use this 
+            // swap chain; this is the tutorial's way of handling it for now, saying that it will 
+            // do something more latter
             uint32_t queueFamilyIndices[]{
                 indices.graphicsFamily.value(),
                 indices.presentationFamily.value()
@@ -772,22 +803,21 @@ private:
             createInfo.queueFamilyIndexCount = 2;
             createInfo.pQueueFamilyIndices = queueFamilyIndices;
         }
-        else {
-            createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-            createInfo.queueFamilyIndexCount = 0;       //??optional??
-            createInfo.pQueueFamilyIndices = nullptr;   //??optional??
-        }
 
-        //??
+        // Note: We can bake a transform (90 degree clockwise rotation, horizontal flip, etc.) 
+        // into the swap chain. For example, a fish-eye transform can be run on the image before 
+        // the image gets sent to a VR headset.
         createInfo.preTransform = swapChainSupport.capabilities.currentTransform;
 
         // set to opaque unless you want to make the window surface transluscent (might want to do 
         // this in mobile GUIs)
         createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
 
+        // retrieved earlier
         createInfo.presentMode = presentMode;
         
-        // if a region of the surface is not visible (ex: another window is in front of this one), discard the obscured pixels
+        // if a region of the surface is not visible (ex: another window is in front of this one), 
+        // discard the obscured pixels
         createInfo.clipped = VK_TRUE;
 
         // Note: If a swap chain becomes invalid at runtime (ex: window resized, so image extents 
@@ -795,19 +825,20 @@ private:
         // with that later. For now (11/3/2018), our GLFW window size is fixed.
         createInfo.oldSwapchain = VK_NULL_HANDLE;
 
+        // all that to lead up to this
         if (vkCreateSwapchainKHR(mLogicalDevice, &createInfo, nullptr, &mSwapChain) != VK_SUCCESS) {
             throw std::runtime_error("failed to create swap chain");
         }
 
         // Note: Cannot create space for the images in the swap chain prior to creating it because 
-        // the create info only specifies "minimum" image count. It is allowed to create more than 
-        // that.(??why would it??)
+        // the create info only specifies "minimum" image count. Vulkan is allowed to create more 
+        // than that (I don't know why it would, but it can, and need to account for it).
         uint32_t imageCount = 0;
         vkGetSwapchainImagesKHR(mLogicalDevice, mSwapChain, &imageCount, nullptr);
         mSwapChainImages.resize(imageCount);
         vkGetSwapchainImagesKHR(mLogicalDevice, mSwapChain, &imageCount, mSwapChainImages.data());
 
-        // store these too for later
+        // also store these for later
         mSwapChainImageFormat = surfaceFormat.format;
         mSwapChainExtent = extent;
     }
