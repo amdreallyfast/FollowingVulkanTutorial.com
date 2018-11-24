@@ -185,21 +185,6 @@ std::string ReadFileIntoString(const std::string &file_path) {
     throw std::runtime_error(ss.str());
 }
 
-//// Source: https://vulkan-tutorial.com/Drawing_a_triangle/Graphics_pipeline_basics/Shader_modules
-//std::vector<char> ReadFileIntoVector(const std::string &file_path) {
-//    std::ifstream file(file_path, std::ios::ate | std::ios::binary);
-//    if (!file.is_open()) {
-//        throw std::runtime_error("failed to open file");
-//    }
-//
-//    auto fileSize = static_cast<size_t>(file.tellg());
-//    std::vector<char> buffer(fileSize);
-//    file.seekg(0);
-//    file.read(buffer.data(), fileSize);
-//    file.close();
-//    return buffer;
-//}
-
 /*-------------------------------------------------------------------------------------------------
 Description:
     The class for this tutorial series.
@@ -372,8 +357,6 @@ private:
             }
         }
     }
-
-
 
     /*---------------------------------------------------------------------------------------------
     Description:
@@ -723,7 +706,8 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        ??
+        A logical device seems to be the C-based Vulkan's version of a "base class" that 
+        implements common functions regardless of the physical device.
     Creator:    John Cox, 10/2018
     ---------------------------------------------------------------------------------------------*/
     void CreateLogicalDevice() {
@@ -958,6 +942,23 @@ private:
         }
 
         return shaderModule;
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        "Before we can finish creating the pipeline, we need to tell Vulkan about the framebuffer 
+        attachments that will be used while rendering. We need to specify how many color and depth 
+        buffers there will be, how many samples to use for each of them and how their contents 
+        should be handled throughout the rendering operations. All of this information is wrapped 
+        in a render pass object..."
+
+        ??what? "color and depth buffers"? "framebuffer attachments"??
+    Creator:    John Cox, 11/2018
+    ---------------------------------------------------------------------------------------------*/
+    void CreateRenderPass() {
+        VkAttachmentDescription colorAttachment{};
+        colorAttachment.format = mSwapChainImageFormat;
+        colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -1200,6 +1201,7 @@ private:
         CreateLogicalDevice();
         CreateSwapChain();
         CreateImageViews();
+        CreateRenderPass();
         CreateGraphicsPipeline();
     }
 
