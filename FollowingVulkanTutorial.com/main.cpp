@@ -8,6 +8,12 @@
 #include <optional>     // for return values that may not exist
 #include <algorithm>    // std::min/max
 
+#include <fstream>      // for loading shader binaries
+#include <streambuf>    // for loading shader binaries
+#include <string>       // for loading shader binaries
+#include <cerrno>       // for loading shader binaries
+
+
 //VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
 //    VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
 //    VkDebugUtilsMessageTypeFlagsEXT messageType,
@@ -158,11 +164,6 @@ void DestroyDebugUtilsMessengEXT(
     }
 }
 
-#include <fstream>
-#include <streambuf>
-#include <string>
-#include <cerrno>
-
 /*-------------------------------------------------------------------------------------------------
 Description:
     Reads an entire file into a string and returns it.
@@ -170,7 +171,7 @@ Description:
     Source: http://insanecoding.blogspot.com/2011/11/how-to-read-in-file-in-c.html
 Creator:    John Cox, 11/2018
 -------------------------------------------------------------------------------------------------*/
-std::string ReadFile(const std::string &file_path) {
+std::string ReadFileIntoString(const std::string &file_path) {
     std::ifstream in(file_path.c_str(), std::ios::in | std::ios::binary);
     if (in) {
         return(std::string(
@@ -178,10 +179,26 @@ std::string ReadFile(const std::string &file_path) {
             std::istreambuf_iterator<char>()));
     }
     
-    // ??std::runtime_error instead??
-    throw(errno);
+    std::stringstream ss;
+    ss << errno;
+
+    throw std::runtime_error(ss.str());
 }
 
+//// Source: https://vulkan-tutorial.com/Drawing_a_triangle/Graphics_pipeline_basics/Shader_modules
+//std::vector<char> ReadFileIntoVector(const std::string &file_path) {
+//    std::ifstream file(file_path, std::ios::ate | std::ios::binary);
+//    if (!file.is_open()) {
+//        throw std::runtime_error("failed to open file");
+//    }
+//
+//    auto fileSize = static_cast<size_t>(file.tellg());
+//    std::vector<char> buffer(fileSize);
+//    file.seekg(0);
+//    file.read(buffer.data(), fileSize);
+//    file.close();
+//    return buffer;
+//}
 
 /*-------------------------------------------------------------------------------------------------
 Description:
@@ -918,6 +935,31 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
+        Given a file path to a compiled shader binary, reads the entire file and constructs a 
+        VkShaderModule object out of the data, then returns it.
+
+        Note: Thge shader module requires explicit destruction since it was created with a 
+        "vkCreate*(...)" call.
+    Creator:    John Cox, 11/2018
+    ---------------------------------------------------------------------------------------------*/
+    VkShaderModule CreateShaderModule(const std::string &filePath) {
+        auto shader_binary = ReadFileIntoString(filePath);
+
+        VkShaderModuleCreateInfo createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        createInfo.codeSize = shader_binary.size();
+        createInfo.pCode = reinterpret_cast<const uint32_t*>(shader_binary.data());
+
+        VkShaderModule shaderModule;
+        if (vkCreateShaderModule(mLogicalDevice, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create shader module");
+        }
+
+        return shaderModule;
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
         Governs the creation of all stages of the graphics pipeline.
 
         Some stages are fixed, and others are programmable. 
@@ -955,8 +997,31 @@ private:
     Creator:    John Cox, 11/2018
     ---------------------------------------------------------------------------------------------*/
     void CreateGraphicsPipeline() {
-        auto vertShaderCode = ReadFile("shaders/vert.spv");
-        auto fragShaderCode = ReadFile("shaders/frag.spv");
+        VkShaderModule vertShaderModule = CreateShaderModule("shaders/vert.spv");
+        VkShaderModule fragShaderModule = CreateShaderModule("shaders/frag.spv");
+
+        std::vector<VkPipelineShaderStageCreateInfo> shaderStageCreateInfos;
+        {
+            VkPipelineShaderStageCreateInfo createInfo{};
+            createInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+            createInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+            createInfo.module = vertShaderModule;
+            createInfo.pName = "main";
+            shaderStageCreateInfos.push_back(createInfo);
+        }
+        {
+            VkPipelineShaderStageCreateInfo createInfo{};
+            createInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+            createInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+            createInfo.module = fragShaderModule;
+            createInfo.pName = "main";
+            shaderStageCreateInfos.push_back(createInfo);
+        }
+
+        // Note: Vulkan's packaged shader code is only necessary during loading, but since it was 
+        // created with a "vkCreate*(...)" call, it needs to be explicitly destroyed.
+        vkDestroyShaderModule(mLogicalDevice, vertShaderModule, nullptr);
+        vkDestroyShaderModule(mLogicalDevice, fragShaderModule, nullptr);
     }
 
     /*---------------------------------------------------------------------------------------------
