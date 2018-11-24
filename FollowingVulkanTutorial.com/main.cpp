@@ -230,6 +230,8 @@ private:
     VkFormat mSwapChainImageFormat = VkFormat::VK_FORMAT_UNDEFINED;
     VkExtent2D mSwapChainExtent{};
     std::vector<VkImageView> mSwapChainImageViews;
+    VkPipelineLayout mPipelineLayout;    //??what is this??
+
 
     const std::vector<const char *> mRequiredDeviceExtensions {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME
@@ -1018,6 +1020,148 @@ private:
             shaderStageCreateInfos.push_back(createInfo);
         }
 
+        // for now (11/23/2018), we have hard-coded vertex data into the shader so that pipeline 
+        // creation will be a bit easier, but we will come back make non-0 values later
+        // Note: Vertex bindingsattribute destriptions are like Vulkan's version of OpenGL's
+        // glVertexAttribIPointer(...), only more explicit.
+        VkPipelineVertexInputStateCreateInfo vertexInputCreateInfo{};
+        vertexInputCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+        vertexInputCreateInfo.vertexBindingDescriptionCount = 0;
+        vertexInputCreateInfo.pVertexBindingDescriptions = nullptr;
+        vertexInputCreateInfo.vertexAttributeDescriptionCount = 0;
+        vertexInputCreateInfo.pVertexAttributeDescriptions = nullptr;
+
+        // the Input Assembly State's "topology" is like OpenGL's "draw style" (GL_LINES, 
+        // GL_TRIANGLES, etc.)
+        VkPipelineInputAssemblyStateCreateInfo inputAssemblyCreateInfo{};
+        inputAssemblyCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+        inputAssemblyCreateInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        inputAssemblyCreateInfo.primitiveRestartEnable = VK_FALSE;
+
+        // Note: Vulkan's Y values are like everyone else now, with (0,0) in the upper left. This 
+        // is unlike OpenGL, which had (0,0) in the lower left.
+        VkViewport viewport{};
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.width = static_cast<float>(mSwapChainExtent.width);
+        viewport.height = static_cast<float>(mSwapChainExtent.height);
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+
+        // Note: Vulkan's rectangle uses "offset" and "extent" instead of "x,y" and 
+        // "width,height". They work out to the same thing though.
+        VkRect2D scissor{};
+        scissor.offset = VkOffset2D{ 0,0 };
+        scissor.extent = mSwapChainExtent;
+
+        // Vulkan wants to have the viewport and scissor in a single structure
+        // Note: There may be cases in which multiple viewports are desired, such as a flight 
+        // simulated with a viewport for each instrument, though there are likely more efficient 
+        // ways to handle that through textures. Still, multiple viewports could be a nice thing 
+        // in the toolbag, even if we're not going to be using them.
+        VkPipelineViewportStateCreateInfo viewportStateCreateInfo{};
+        viewportStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+        viewportStateCreateInfo.viewportCount = 1;
+        viewportStateCreateInfo.pViewports = &viewport;
+        viewportStateCreateInfo.scissorCount = 1;
+        viewportStateCreateInfo.pScissors = &scissor;
+
+        // "The rasterizer takes the geometry that is shaped by the vertices from the vertex 
+        // shader and turns it into fragments to be colored by the fragment shader. It also 
+        // performs depth testing, face culling and the scissor test, and it can be configured to 
+        // output fragments that fill entire polygons or just the edges (wireframe rendering)."
+        // Note: If depth clamping is enabled, fragments beyond near/far planes are discarded. 
+        // Disabling depth clamping could be useful if we want a render stage that considers all 
+        // depth values.
+        VkPipelineRasterizationStateCreateInfo rasterizerCreateInfo{};
+        rasterizerCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+        rasterizerCreateInfo.depthClampEnable = VK_FALSE; //??why are we using false??
+        rasterizerCreateInfo.rasterizerDiscardEnable = VK_FALSE; // definitely want rasterization
+
+        // or LINE or POINT
+        rasterizerCreateInfo.polygonMode = VK_POLYGON_MODE_FILL;
+
+        // Note: >1.0f requires enabling "wideLines" GPU feature
+        rasterizerCreateInfo.lineWidth = 2.0f;
+        rasterizerCreateInfo.cullMode = VK_CULL_MODE_BACK_BIT;
+        rasterizerCreateInfo.frontFace = VK_FRONT_FACE_CLOCKWISE;
+
+        //??detph biasing in shader maps??
+        rasterizerCreateInfo.depthBiasEnable = VK_FALSE;
+        //rasterizerCreateInfo.depthBiasConstantFactor = 0.0f;
+        //rasterizerCreateInfo.depthBiasClamp = 0.0f;
+        //rasterizerCreateInfo.depthBiasSlopeFactor = 0.0f;
+
+        // multisampling is an antialiasing technique that combines fragment shader results of 
+        // multiple polygons that rasterize to the same pixel, but we won't be using this at this 
+        // time (11/24/2018)
+        // Note: Enabling this requires enabling a GPU feature (??which one??)
+        VkPipelineMultisampleStateCreateInfo multisamplingCreateInfo{};
+        multisamplingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+        multisamplingCreateInfo.sampleShadingEnable = VK_FALSE; //VK_TRUE;
+        multisamplingCreateInfo.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+        multisamplingCreateInfo.minSampleShading = 1.0f;
+        multisamplingCreateInfo.pSampleMask = nullptr;
+        multisamplingCreateInfo.alphaToCoverageEnable = VK_FALSE;
+        multisamplingCreateInfo.alphaToOneEnable = VK_FALSE;
+
+        // don't have one at this time, so leave it blank
+        VkPipelineDepthStencilStateCreateInfo depthStencilCreateInfo{};
+
+        // color blending requires two structures: (1) the "blending attachment state" is per 
+        // framebuffer (we only have one) and (2) the "blend state create info", which contains 
+        // global color blending settings
+        // Note: Color blending often used in conjunction with alpha values.
+        // Ex: .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA; //(1-srcAlpha)
+        // Pseudocode:
+        //    if (blendEnable) {
+        //        finalColor.rgb = (srcColorBlendFactor * newColor.rgb) < colorBlendOp > (dstColorBlendFactor * oldColor.rgb);
+        //        finalColor.a = (srcAlphaBlendFactor * newColor.a) < alphaBlendOp > (dstAlphaBlendFactor * oldColor.a);
+        //    }
+        //    else {
+        //        finalColor = newColor;
+        //    }
+        //    finalColor = finalColor & colorWriteMask;
+        VkPipelineColorBlendAttachmentState colorBlendAttachmentState{};
+        colorBlendAttachmentState.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        colorBlendAttachmentState.blendEnable = VK_FALSE;
+        colorBlendAttachmentState.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;    //??
+        colorBlendAttachmentState.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;   //??
+        colorBlendAttachmentState.colorBlendOp = VK_BLEND_OP_ADD;               //??
+        colorBlendAttachmentState.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;    //??
+        colorBlendAttachmentState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;   //??
+        colorBlendAttachmentState.alphaBlendOp = VK_BLEND_OP_ADD;               //??
+
+        VkPipelineColorBlendStateCreateInfo colorBlendCreateInfo{};
+        colorBlendCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+        colorBlendCreateInfo.logicOpEnable = VK_FALSE;
+        colorBlendCreateInfo.logicOp = VK_LOGIC_OP_COPY;
+        colorBlendCreateInfo.attachmentCount = 1;   // only one framebuffer
+        colorBlendCreateInfo.pAttachments = &colorBlendAttachmentState;
+
+        //??does this 4-item array follow the RGBA order? and what does it do??
+        colorBlendCreateInfo.blendConstants[0] = 0.0f;
+        colorBlendCreateInfo.blendConstants[1] = 0.0f;
+        colorBlendCreateInfo.blendConstants[2] = 0.0f;
+        colorBlendCreateInfo.blendConstants[3] = 0.0f;
+
+        // pipeline layout is where we will be using uniforms, but for now (11/24/2018), we leave 
+        // it blank
+
+        // finally, the pipeline itself
+        //??why doesn't it use any of the createInfo structures before this??
+        VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo{};
+        pipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        pipelineLayoutCreateInfo.setLayoutCount = 0;
+        pipelineLayoutCreateInfo.pSetLayouts = nullptr;
+        pipelineLayoutCreateInfo.pushConstantRangeCount = 0;
+        pipelineLayoutCreateInfo.pPushConstantRanges = nullptr;
+
+        // FINALLY
+        if (vkCreatePipelineLayout(mLogicalDevice, &pipelineLayoutCreateInfo, nullptr, &mPipelineLayout) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create pipeline layout");
+        }
+
         // Note: Vulkan's packaged shader code is only necessary during loading, but since it was 
         // created with a "vkCreate*(...)" call, it needs to be explicitly destroyed.
         vkDestroyShaderModule(mLogicalDevice, vertShaderModule, nullptr);
@@ -1076,6 +1220,7 @@ private:
     Creator:    John Cox, 10/2018
     ---------------------------------------------------------------------------------------------*/
     void Cleanup() {
+        vkDestroyPipelineLayout(mLogicalDevice, mPipelineLayout, nullptr);
         for (auto &imageView : mSwapChainImageViews) {
             vkDestroyImageView(mLogicalDevice, imageView, nullptr);
         }
