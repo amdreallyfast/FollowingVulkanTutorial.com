@@ -14,116 +14,6 @@
 #include <cerrno>       // for loading shader binaries
 
 
-//VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
-//    VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-//    VkDebugUtilsMessageTypeFlagsEXT messageType,
-//    const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
-//    void *pUserData) {
-//
-//    std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
-//    return VK_FALSE;
-//}
-//
-//VkResult CreateDebugUtilsMessengerEXT(
-//    VkInstance instance,
-//    const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo,
-//    const VkAllocationCallbacks *pAllocator,
-//    VkDebugUtilsMessengerEXT *pCallback) {
-//
-//    // Note: It seems that static_cast<...> doesn't work. Use the C-style forced cast.
-//    auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
-//    if (func != nullptr) {
-//        return func(instance, pCreateInfo, pAllocator, pCallback);
-//    }
-//    else {
-//        return VK_ERROR_EXTENSION_NOT_PRESENT;
-//    }
-//}
-//
-//std::vector<const char *> GetRequiredExtensions() {
-//    uint32_t glfwExtensionCount = 0;
-//    const char ** glfwExtensions;
-//    glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
-//    std::vector<const char *> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
-//
-//    // also want the "debug utils"
-//    extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-//    return extensions;
-//}
-//
-//int main(int argc, char *argv[]) {
-//    glfwInit();
-//
-//    // Note: GLFW was originally designed to create an OpenGL context. Possible "client API"
-//    // values are OpenGL or OpenGL ES. At this time (10/20/2018), there is no option for
-//    // Vulkan, so tell it to use "no API".
-//    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-//    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE); // disable resizing for now
-//
-//    GLFWmonitor *monitor = nullptr;
-//    GLFWwindow *window = glfwCreateWindow(800, 600, "Vulkan window", monitor, nullptr);
-//
-//    // create the instance
-//    VkApplicationInfo appInfo{};
-//    appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-//    appInfo.pApplicationName = "Hello Triangle";
-//    appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-//    appInfo.pEngineName = "No Engine";
-//    appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-//    appInfo.apiVersion = VK_MAKE_VERSION(1, 1, 82);
-//
-//    auto requiredExtensions = GetRequiredExtensions();
-//    const std::vector<const char *> requiredValidationLayers{
-//        "VK_LAYER_LUNARG_standard_validation",
-//    };
-//
-//    // create the "debug utils EXT" callback object
-//    VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
-//    debugCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-//    debugCreateInfo.messageSeverity =
-//        VkDebugUtilsMessageSeverityFlagBitsEXT::VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-//        //VkDebugUtilsMessageSeverityFlagBitsEXT::VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
-//        VkDebugUtilsMessageSeverityFlagBitsEXT::VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-//        VkDebugUtilsMessageSeverityFlagBitsEXT::VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-//    debugCreateInfo.messageType =
-//        VkDebugUtilsMessageTypeFlagBitsEXT::VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-//        VkDebugUtilsMessageTypeFlagBitsEXT::VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-//        VkDebugUtilsMessageTypeFlagBitsEXT::VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-//    debugCreateInfo.pfnUserCallback = DebugCallback;    // global function
-//    debugCreateInfo.pUserData = nullptr;
-//
-//    VkInstanceCreateInfo instanceCreateInfo{};
-//    instanceCreateInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-//    instanceCreateInfo.pApplicationInfo = &appInfo;
-//    instanceCreateInfo.enabledExtensionCount = static_cast<uint32_t>(requiredExtensions.size());
-//    instanceCreateInfo.ppEnabledExtensionNames = requiredExtensions.data();
-//    instanceCreateInfo.enabledLayerCount = static_cast<uint32_t>(requiredValidationLayers.size());
-//    instanceCreateInfo.ppEnabledLayerNames = requiredValidationLayers.data();
-//    instanceCreateInfo.pNext = &debugCreateInfo;
-//
-//    VkInstance instance;
-//    if (vkCreateInstance(&instanceCreateInfo, nullptr, &instance) != VK_SUCCESS) {
-//        throw std::runtime_error("failed to create instance");
-//    }
-//
-//    VkDebugUtilsMessengerEXT callback;
-//    if (CreateDebugUtilsMessengerEXT(instance, &debugCreateInfo, nullptr, &callback) != VK_SUCCESS) {
-//        throw std::runtime_error("failed to set up debug callback");
-//    }
-//
-//    // do the main loop here
-//
-//    // intentionally destroying instance without destroying the callback to try to trigger error
-//    vkDestroyInstance(instance, nullptr);
-//    glfwDestroyWindow(window);
-//    glfwTerminate();
-//}
-
-
-
-
-
-
 /*-------------------------------------------------------------------------------------------------
 Description:
     A wrapper for the dynamic calling of vkCreateDebugUtilsMessengerEXT(...).
@@ -134,7 +24,7 @@ VkResult CreateDebugUtilsMessengerEXT(
     const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo,
     const VkAllocationCallbacks *pAllocator,
     VkDebugUtilsMessengerEXT *pCallback) {
-    
+
     // Note: It seems that static_cast<...> doesn't work. Use the C-style forced cast.
     auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
     if (func != nullptr) {
@@ -167,7 +57,7 @@ void DestroyDebugUtilsMessengEXT(
 /*-------------------------------------------------------------------------------------------------
 Description:
     Reads an entire file into a string and returns it.
-    
+
     Source: http://insanecoding.blogspot.com/2011/11/how-to-read-in-file-in-c.html
 Creator:    John Cox, 11/2018
 -------------------------------------------------------------------------------------------------*/
@@ -175,10 +65,10 @@ std::string ReadFileIntoString(const std::string &file_path) {
     std::ifstream in(file_path.c_str(), std::ios::in | std::ios::binary);
     if (in) {
         return(std::string(
-            std::istreambuf_iterator<char>(in), 
+            std::istreambuf_iterator<char>(in),
             std::istreambuf_iterator<char>()));
     }
-    
+
     std::stringstream ss;
     ss << errno;
 
@@ -221,14 +111,16 @@ private:
     VkPipeline mGraphicsPipeline;
     VkCommandPool mCommandPool;
     std::vector<VkCommandBuffer> mCommandBuffers;
+    VkSemaphore mSemaphoreImageAvailable;
+    VkSemaphore mSemaphoreRenderFinished;
 
-    const std::vector<const char *> mRequiredDeviceExtensions {
+    const std::vector<const char *> mRequiredDeviceExtensions{
         VK_KHR_SWAPCHAIN_EXTENSION_NAME
     };
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        Encapsulates info about whether or not the necessary command queue indexes 
+        Encapsulates info about whether or not the necessary command queue indexes
         (driver-specific-but-won't-change-at-runtime locations) have been acquired.
     Creator:    John Cox, 10/2018
     ---------------------------------------------------------------------------------------------*/
@@ -246,9 +138,9 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        Windows are containers. We don't draw to windows. Window managers provide a "surface" that 
-        is displayed on top of the window (and that usually encompasses less than the whole thing 
-        so that we can have a border, etc.). We draw to these surfaces. To use it properly, we 
+        Windows are containers. We don't draw to windows. Window managers provide a "surface" that
+        is displayed on top of the window (and that usually encompasses less than the whole thing
+        so that we can have a border, etc.). We draw to these surfaces. To use it properly, we
         must understand what our chosen window manager's surface support is capable of doing.
 
         Those details are stored here.
@@ -277,8 +169,8 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        Support function for CreateInstance(). It checks ever string in the argument against the 
-        extension list provided by the driver. If there is something in the required list that 
+        Support function for CreateInstance(). It checks ever string in the argument against the
+        extension list provided by the driver. If there is something in the required list that
         isn't in the driver's list, an error is thrown.
     Creator:    John Cox, 10/2018
     ---------------------------------------------------------------------------------------------*/
@@ -372,7 +264,7 @@ private:
         VkDebugUtilsMessageTypeFlagsEXT messageType,
         const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
         void *pUserData) {
-        
+
         std::cerr << "validation layer [" << pCallbackData->pMessageIdName << "]: " << pCallbackData->pMessage << std::endl << std::flush;
         return VK_FALSE;
     }
@@ -402,7 +294,7 @@ private:
         }
 
         // for debugging
-        const std::vector<const char *> requiredValidationLayers {
+        const std::vector<const char *> requiredValidationLayers{
             "VK_LAYER_LUNARG_standard_validation",
         };
         if (mEnableValidationLayers) {
@@ -523,7 +415,7 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        If the preferred format sRGB (B8G8R8A8 nonlinear) is available, return that. Else return 
+        If the preferred format sRGB (B8G8R8A8 nonlinear) is available, return that. Else return
         the first available supported image format.
 
         More on non-linear color space:
@@ -556,12 +448,12 @@ private:
         (2) Immediate
         (3) FIFO
 
-        Note: The tutorial places "Immediate" above "FIFO", saying "Unfortunately some drivers 
-        currently don't properly support VK_PRESENT_MODE_FIFO_KHR, so we should prefer 
+        Note: The tutorial places "Immediate" above "FIFO", saying "Unfortunately some drivers
+        currently don't properly support VK_PRESENT_MODE_FIFO_KHR, so we should prefer
         VK_PRESENT_MODE_IMMEDIATE_KHR if VK_PRESENT_MODE_MAILBOX_KHR is not available".
 
         Mailbox can be used to implement a triple buffer => first choice.
-        
+
         FIFO is a simple double buffer, reminiscient of OpenGL's size 2 framebuffer. It is
         guaranteed to be an option.
 
@@ -591,13 +483,13 @@ private:
     /*---------------------------------------------------------------------------------------------
     Description:
         "Extent" is the resolution (width, height) of the images that are put into the swap chain.
-        This is either slightly smaller than the window's resolution (windowed mode) or equal to 
+        This is either slightly smaller than the window's resolution (windowed mode) or equal to
         it (usually full screen mode).
 
-        Note: Some window managers (GLFW included) allow the extent of the image to be 
-        automatically selected by the window manager. If the window manager did not automatically 
-        select the resolution (either because it couldn't or for some reason it just didn't), then 
-        the "extent" is set to maximum uint32. In that case, manually clamp the resolution to the 
+        Note: Some window managers (GLFW included) allow the extent of the image to be
+        automatically selected by the window manager. If the window manager did not automatically
+        select the resolution (either because it couldn't or for some reason it just didn't), then
+        the "extent" is set to maximum uint32. In that case, manually clamp the resolution to the
         size of the window.
     Creator:    John Cox, 11/2018
     ---------------------------------------------------------------------------------------------*/
@@ -620,13 +512,13 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        Unlike OpenGL, which has a default framebuffer, we have to set one up manually. In Vulkan, 
-        the buffer of images that the surface will pull from to swap out the current image is 
-        called a "swap chain". Need to make sure that the surface can pull from a buffer created 
+        Unlike OpenGL, which has a default framebuffer, we have to set one up manually. In Vulkan,
+        the buffer of images that the surface will pull from to swap out the current image is
+        called a "swap chain". Need to make sure that the surface can pull from a buffer created
         by this device.
 
-        Note: Not all GPUs can do this. Computers made for blade PCs in a server rack may not even 
-        have an output, and so it is unlikely that the creator of that GPU's driver would have 
+        Note: Not all GPUs can do this. Computers made for blade PCs in a server rack may not even
+        have an output, and so it is unlikely that the creator of that GPU's driver would have
         even bothered to set it up to talk with the OS' window surfaces. (??is this right??)
     Creator:    John Cox, 11/2018
     ---------------------------------------------------------------------------------------------*/
@@ -673,8 +565,8 @@ private:
         bool swapChainAdequate = false;
         if (deviceExtensionsSupported) {
             SwapChainSupportDetails swapChainSupport = QuerySwapChainSupport(device);
-            swapChainAdequate = 
-                !swapChainSupport.formats.empty() && 
+            swapChainAdequate =
+                !swapChainSupport.formats.empty() &&
                 !swapChainSupport.presentModes.empty();
         }
 
@@ -713,7 +605,7 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        A logical device seems to be the C-based Vulkan's version of a "base class" that 
+        A logical device seems to be the C-based Vulkan's version of a "base class" that
         implements common functions regardless of the physical device.
     Creator:    John Cox, 10/2018
     ---------------------------------------------------------------------------------------------*/
@@ -765,13 +657,13 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        Rather than the simple "swap" functionality of OpenGL, which had a default "framebuffer" 
-        with "front" and "back" buffers (where "buffer" means "a pixel array"), Vulkan's 
-        framebuffer requires more setup and puts in place a "swap chain", which is a set of image 
-        buffers that can be swapped out as desired. This "chain" (??is it a linked list??) has more flexibility than OpenGL's framebuffer. 
-        
-        There is a minimum and maximum size to this swap chain. When the window manager's creators 
-        implemented Vulkan support on the window's drawing surface, they determined these values. 
+        Rather than the simple "swap" functionality of OpenGL, which had a default "framebuffer"
+        with "front" and "back" buffers (where "buffer" means "a pixel array"), Vulkan's
+        framebuffer requires more setup and puts in place a "swap chain", which is a set of image
+        buffers that can be swapped out as desired. This "chain" (??is it a linked list??) has more flexibility than OpenGL's framebuffer.
+
+        There is a minimum and maximum size to this swap chain. When the window manager's creators
+        implemented Vulkan support on the window's drawing surface, they determined these values.
         We just need to query them.
     Creator:    John Cox, 11/2018
     ---------------------------------------------------------------------------------------------*/
@@ -852,7 +744,7 @@ private:
 
         // retrieved earlier
         createInfo.presentMode = presentMode;
-        
+
         // if a region of the surface is not visible (ex: another window is in front of this one), 
         // discard the obscured pixels
         createInfo.clipped = VK_TRUE;
@@ -882,10 +774,10 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        Creates an "image view" object for each image in the swap chain. A "view" tells Vulkan how 
-        to handle the array of data that we generically call "image". Not every "image" is a 
-        finished drawing though. It may be a rendering from a particular point of view and will be 
-        used as a texture, or maybe it is a lighting map with simple intensity values, or maybe it 
+        Creates an "image view" object for each image in the swap chain. A "view" tells Vulkan how
+        to handle the array of data that we generically call "image". Not every "image" is a
+        finished drawing though. It may be a rendering from a particular point of view and will be
+        used as a texture, or maybe it is a lighting map with simple intensity values, or maybe it
         really is a finished array of pixel colors.
     Creator:    John Cox, 11/2018
     ---------------------------------------------------------------------------------------------*/
@@ -899,7 +791,7 @@ private:
             createInfo.image = mSwapChainImages.at(i);
             createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;    // 2D texture
             createInfo.format = mSwapChainImageFormat;
-            
+
             // we could mess with the mappings of components.r, components.g, etc. and set all 
             // color components in the view to be "red" (VK_COMPONENT_SWIZZLE_R), thus giving us a 
             // monochrome red shade, or we could leave them at their default values 
@@ -920,7 +812,7 @@ private:
 
             // swap chain is created from the logical device, and so the image views of the swap 
             // chain's images are also created from logical device
-            if (vkCreateImageView(mLogicalDevice, &createInfo, nullptr, &mSwapChainImageViews.at(i)) != VK_SUCCESS ) {
+            if (vkCreateImageView(mLogicalDevice, &createInfo, nullptr, &mSwapChainImageViews.at(i)) != VK_SUCCESS) {
                 throw std::runtime_error("failed to create image views");
             }
         }
@@ -928,10 +820,10 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        Given a file path to a compiled shader binary, reads the entire file and constructs a 
+        Given a file path to a compiled shader binary, reads the entire file and constructs a
         VkShaderModule object out of the data, then returns it.
 
-        Note: Thge shader module requires explicit destruction since it was created with a 
+        Note: Thge shader module requires explicit destruction since it was created with a
         "vkCreate*(...)" call.
     Creator:    John Cox, 11/2018
     ---------------------------------------------------------------------------------------------*/
@@ -953,10 +845,10 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        "Before we can finish creating the pipeline, we need to tell Vulkan about the framebuffer 
-        attachments that will be used while rendering. We need to specify how many color and depth 
-        buffers there will be, how many samples to use for each of them and how their contents 
-        should be handled throughout the rendering operations. All of this information is wrapped 
+        "Before we can finish creating the pipeline, we need to tell Vulkan about the framebuffer
+        attachments that will be used while rendering. We need to specify how many color and depth
+        buffers there will be, how many samples to use for each of them and how their contents
+        should be handled throughout the rendering operations. All of this information is wrapped
         in a render pass object..."
 
         ??what? "color and depth buffers"? "framebuffer attachments"??
@@ -994,6 +886,19 @@ private:
         subpass.colorAttachmentCount = 1;
         subpass.pColorAttachments = &colorAttachmentRef;
 
+        // Note: There is an implit "subpass" that occurs at the start of the pipeline and another 
+        // at the end. There may not be an image available yet by the time the command buffer 
+        // pipeline is ready to execute. Insert a subpass dependency to make sure that this 
+        // implicit subpass doesn't begin prematurely.
+        //??what? are you sure this is correct??
+        VkSubpassDependency dependency{};
+        dependency.srcSubpass = VK_SUBPASS_EXTERNAL;    // "external" meaning the implict subpasses
+        dependency.dstSubpass = 0;  // index 0 indicates our subpass (the only one right now)
+        dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependency.srcAccessMask = 0;
+        dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
         // finally, make the render pass object itself
         VkRenderPassCreateInfo renderPassCreateInfo{};
         renderPassCreateInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -1001,6 +906,8 @@ private:
         renderPassCreateInfo.pAttachments = &colorAttachmentDesc;
         renderPassCreateInfo.subpassCount = 1;
         renderPassCreateInfo.pSubpasses = &subpass;
+        renderPassCreateInfo.dependencyCount = 1;
+        renderPassCreateInfo.pDependencies = &dependency;
 
         if (vkCreateRenderPass(mLogicalDevice, &renderPassCreateInfo, nullptr, &mRenderPass) != VK_SUCCESS) {
             throw std::runtime_error("failed to create render pass");
@@ -1011,37 +918,37 @@ private:
     Description:
         Governs the creation of all stages of the graphics pipeline.
 
-        Some stages are fixed, and others are programmable. 
+        Some stages are fixed, and others are programmable.
         - The "fixed" stages can be configured with a set number of options from the SDK.
         - The "programmable" stages can be set up with a shader or be skipped entirely.
 
         From the tutorial:
-        - The input assembler collects the raw vertex data from the buffers you specify and may 
-            also use an index buffer to repeat certain elements without having to duplicate the 
+        - The input assembler collects the raw vertex data from the buffers you specify and may
+            also use an index buffer to repeat certain elements without having to duplicate the
             vertex data itself. This stage is FIXED.
-        - The vertex shader is run for every vertex and generally applies transformations to turn 
-            vertex positions from model space to screen space. It also passes per-vertex data down 
+        - The vertex shader is run for every vertex and generally applies transformations to turn
+            vertex positions from model space to screen space. It also passes per-vertex data down
             the pipeline. This stage is PROGRAMMABLE.
-        - The tessellation shaders allow you to subdivide geometry based on certain rules to 
-            increase the mesh quality. This is often used to make surfaces like brick walls and 
+        - The tessellation shaders allow you to subdivide geometry based on certain rules to
+            increase the mesh quality. This is often used to make surfaces like brick walls and
             staircases look less flat when they are nearby. This stage is PROGRAMMABLE.
-        - The geometry shader is run on every primitive (triangle, line, point) and can discard it 
-            or output more primitives than came in. This is similar to the tessellation shader, 
-            but much more flexible. However, it is not used much in today's applications because 
-            the performance is not that good on most graphics cards except for Intel's integrated 
+        - The geometry shader is run on every primitive (triangle, line, point) and can discard it
+            or output more primitives than came in. This is similar to the tessellation shader,
+            but much more flexible. However, it is not used much in today's applications because
+            the performance is not that good on most graphics cards except for Intel's integrated
             GPUs. This stage is PROGRAMMABLE.
-        - The rasterization stage discretizes the primitives into fragments. These are the pixel 
-            elements that they fill on the framebuffer. Any fragments that fall outside the screen 
-            are discarded and the attributes outputted by the vertex shader are interpolated 
-            across the fragments, as shown in the figure. Usually the fragments that are behind 
+        - The rasterization stage discretizes the primitives into fragments. These are the pixel
+            elements that they fill on the framebuffer. Any fragments that fall outside the screen
+            are discarded and the attributes outputted by the vertex shader are interpolated
+            across the fragments, as shown in the figure. Usually the fragments that are behind
             other primitive fragments are also discarded here because of depth testing. This stage
             is FIXED.
-        - The fragment shader is invoked for every fragment that survives and determines which 
-            framebuffer(s) the fragments are written to and with which color and depth values. It 
-            can do this using the interpolated data from the vertex shader, which can include 
+        - The fragment shader is invoked for every fragment that survives and determines which
+            framebuffer(s) the fragments are written to and with which color and depth values. It
+            can do this using the interpolated data from the vertex shader, which can include
             things like texture coordinates and normals for lighting. This stage is PROGRAMMABLE.
-        - The color blending stage applies operations to mix different fragments that map to the 
-            same pixel in the framebuffer. Fragments can simply overwrite each other, add up or be 
+        - The color blending stage applies operations to mix different fragments that map to the
+            same pixel in the framebuffer. Fragments can simply overwrite each other, add up or be
             mixed based upon transparency. This stage is FIXED.
     Creator:    John Cox, 11/2018
     ---------------------------------------------------------------------------------------------*/
@@ -1124,20 +1031,11 @@ private:
         rasterizerCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
         rasterizerCreateInfo.depthClampEnable = VK_FALSE; //??why are we using false??
         rasterizerCreateInfo.rasterizerDiscardEnable = VK_FALSE; // definitely want rasterization
-
-        // or LINE or POINT
-        rasterizerCreateInfo.polygonMode = VK_POLYGON_MODE_FILL;
-
-        // Note: >1.0f requires enabling "wideLines" GPU feature
-        rasterizerCreateInfo.lineWidth = 2.0f;
+        rasterizerCreateInfo.polygonMode = VK_POLYGON_MODE_FILL;    // or LINE or POINT
+        rasterizerCreateInfo.lineWidth = 1.0f;  //>1.0f requires enabling "wideLines" GPU feature
         rasterizerCreateInfo.cullMode = VK_CULL_MODE_BACK_BIT;
         rasterizerCreateInfo.frontFace = VK_FRONT_FACE_CLOCKWISE;
-
-        //??detph biasing in shader maps??
-        rasterizerCreateInfo.depthBiasEnable = VK_FALSE;
-        //rasterizerCreateInfo.depthBiasConstantFactor = 0.0f;
-        //rasterizerCreateInfo.depthBiasClamp = 0.0f;
-        //rasterizerCreateInfo.depthBiasSlopeFactor = 0.0f;
+        rasterizerCreateInfo.depthBiasEnable = VK_FALSE;    //??what is "depth bias"??
 
         // multisampling is an antialiasing technique that combines fragment shader results of 
         // multiple polygons that rasterize to the same pixel, but we won't be using this at this 
@@ -1147,13 +1045,6 @@ private:
         multisamplingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
         multisamplingCreateInfo.sampleShadingEnable = VK_FALSE; //VK_TRUE;
         multisamplingCreateInfo.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-        multisamplingCreateInfo.minSampleShading = 1.0f;
-        multisamplingCreateInfo.pSampleMask = nullptr;
-        multisamplingCreateInfo.alphaToCoverageEnable = VK_FALSE;
-        multisamplingCreateInfo.alphaToOneEnable = VK_FALSE;
-
-        // don't have one at this time, so leave it blank
-        VkPipelineDepthStencilStateCreateInfo depthStencilCreateInfo{};
 
         // color blending requires two structures: (1) the "blending attachment state" is per 
         // framebuffer (we only have one) and (2) the "blend state create info", which contains 
@@ -1172,12 +1063,12 @@ private:
         VkPipelineColorBlendAttachmentState colorBlendAttachmentState{};
         colorBlendAttachmentState.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
         colorBlendAttachmentState.blendEnable = VK_FALSE;
-        colorBlendAttachmentState.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;    //??
-        colorBlendAttachmentState.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;   //??
-        colorBlendAttachmentState.colorBlendOp = VK_BLEND_OP_ADD;               //??
-        colorBlendAttachmentState.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;    //??
-        colorBlendAttachmentState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;   //??
-        colorBlendAttachmentState.alphaBlendOp = VK_BLEND_OP_ADD;               //??
+        //colorBlendAttachmentState.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;    //??
+        //colorBlendAttachmentState.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;   //??
+        //colorBlendAttachmentState.colorBlendOp = VK_BLEND_OP_ADD;               //??
+        //colorBlendAttachmentState.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;    //??
+        //colorBlendAttachmentState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;   //??
+        //colorBlendAttachmentState.alphaBlendOp = VK_BLEND_OP_ADD;               //??
 
         VkPipelineColorBlendStateCreateInfo colorBlendCreateInfo{};
         colorBlendCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -1194,17 +1085,8 @@ private:
 
         // pipeline layout is where we will be using uniforms, but for now (11/24/2018), we leave 
         // it blank
-
-        // finally, the pipeline itself
-        //??why doesn't it use any of the createInfo structures before this??
         VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo{};
         pipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutCreateInfo.setLayoutCount = 0;
-        pipelineLayoutCreateInfo.pSetLayouts = nullptr;
-        pipelineLayoutCreateInfo.pushConstantRangeCount = 0;
-        pipelineLayoutCreateInfo.pPushConstantRanges = nullptr;
-
-        // FINALLY
         if (vkCreatePipelineLayout(mLogicalDevice, &pipelineLayoutCreateInfo, nullptr, &mPipelineLayout) != VK_SUCCESS) {
             throw std::runtime_error("failed to create pipeline layout");
         }
@@ -1218,17 +1100,15 @@ private:
         pipelineCreateInfo.pViewportState = &viewportStateCreateInfo;
         pipelineCreateInfo.pRasterizationState = &rasterizerCreateInfo;
         pipelineCreateInfo.pMultisampleState = &multisamplingCreateInfo;
-        pipelineCreateInfo.pDepthStencilState = nullptr;
         pipelineCreateInfo.pColorBlendState = &colorBlendCreateInfo;
-        pipelineCreateInfo.pDynamicState = nullptr;
         pipelineCreateInfo.layout = mPipelineLayout;
         pipelineCreateInfo.renderPass = mRenderPass;
         pipelineCreateInfo.subpass = 0;
         pipelineCreateInfo.basePipelineHandle = VK_NULL_HANDLE; // not deriving from existing pipeline
-        pipelineCreateInfo.basePipelineIndex = -1;
 
+        VkPipelineCache pipelineCache = VK_NULL_HANDLE;
         uint32_t pipelineCreateInfoCount = 1;
-        if (vkCreateGraphicsPipelines(mLogicalDevice, VK_NULL_HANDLE, pipelineCreateInfoCount, &pipelineCreateInfo, nullptr, &mGraphicsPipeline) != VK_SUCCESS) {
+        if (vkCreateGraphicsPipelines(mLogicalDevice, pipelineCache, pipelineCreateInfoCount, &pipelineCreateInfo, nullptr, &mGraphicsPipeline) != VK_SUCCESS) {
             throw std::runtime_error("failed to create graphics pipeline");
         }
 
@@ -1298,9 +1178,9 @@ private:
     Description:
         Generates a dedicated command buffer for each framebuffer.
 
-        Note: 
-        - "Primary" level command buffers can be submitted to a queue for execution. 
-        - "Secondary" level command buffers cannot be submitted directly, but can be submitted 
+        Note:
+        - "Primary" level command buffers can be submitted to a queue for execution.
+        - "Secondary" level command buffers cannot be submitted directly, but can be submitted
             from primary command buffers. Primary buffers cannot do this.
     Creator:    John Cox, 11/2018
     ---------------------------------------------------------------------------------------------*/
@@ -1315,14 +1195,16 @@ private:
         commandBufferAllocateInfo.commandPool = mCommandPool;
         commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         commandBufferAllocateInfo.commandBufferCount = static_cast<uint32_t>(mCommandBuffers.size());
+        if (vkAllocateCommandBuffers(mLogicalDevice, &commandBufferAllocateInfo, mCommandBuffers.data()) != VK_SUCCESS) {
+            throw std::runtime_error("failed to allocate command buffers");
+        }
 
         for (size_t i = 0; i < mCommandBuffers.size(); i++) {
-            auto &currentCommandBuffer = mCommandBuffers[i];
+            auto currentCommandBuffer = mCommandBuffers[i];
 
             VkCommandBufferBeginInfo commandBufferBeginInfo{};
             commandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
             commandBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
-            commandBufferBeginInfo.pInheritanceInfo = nullptr;
             if (vkBeginCommandBuffer(currentCommandBuffer, &commandBufferBeginInfo) != VK_SUCCESS) {
                 throw std::runtime_error("failed to begin recording command buffer");
             }
@@ -1354,8 +1236,24 @@ private:
                 throw std::runtime_error("failed to record command buffer");
             }
         }
+    }
 
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        Generates the semaphores that will let the
+        "acquire image" ->
+        "execute command buffer" ->
+        "return to swap chain" events occur in order.
+    Creator:    John Cox, 11/2018
+    ---------------------------------------------------------------------------------------------*/
+    void CreateSemaphores() {
+        VkSemaphoreCreateInfo semaphoreCreateInfo{};
+        semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
+        if (vkCreateSemaphore(mLogicalDevice, &semaphoreCreateInfo, nullptr, &mSemaphoreImageAvailable) != VK_SUCCESS ||
+            vkCreateSemaphore(mLogicalDevice, &semaphoreCreateInfo, nullptr, &mSemaphoreRenderFinished) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create semaphore");
+        }
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -1392,8 +1290,68 @@ private:
         CreateImageViews();
         CreateRenderPass();
         CreateGraphicsPipeline();
+        CreateFramebuffers();
         CreateCommandPool();
         CreateCommandBuffers();
+        CreateSemaphores();
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        (1) Acquires an image from the swap chain
+        (2) Executes the command buffer with that image as attachment in the framebuffer (??what??)
+        (3) Returns the image to the swap chain for presentation
+
+        The tutorial says that these events are executed asynchronously unless things are put in
+        place to guarantee that they execute in order. There are two synchronization mechanisms:
+        - Fence: Application can wait via vkWaitForFences(...) until the fence(s) are clear.
+        - Semaphore: Cannot be accessed from the application. These are used for the GPu to
+            synchronize operations within or accross command queues.
+    Creator:    John Cox, 11/2018
+    ---------------------------------------------------------------------------------------------*/
+    void DrawFrame() {
+        uint32_t imageIndex = 0;
+        uint64_t timeout_ns = std::numeric_limits<uint64_t>::max();
+        VkFence nullFence = VK_NULL_HANDLE;
+        vkAcquireNextImageKHR(mLogicalDevice, mSwapChain, timeout_ns, mSemaphoreImageAvailable, nullFence, &imageIndex);
+
+        // submit the command buffer for this image
+        // Note: In short, this reads, "wait for 'image available semaphore', execute command 
+        // buffer on the render passes' color attachment, then raise the 'render finished' 
+        // semaphore".
+        VkSemaphore waitSemaphores[] = { mSemaphoreImageAvailable };
+        VkSemaphore signalSemaphores[] = { mSemaphoreRenderFinished };
+        VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.waitSemaphoreCount = 1;
+        submitInfo.pWaitSemaphores = waitSemaphores;
+        submitInfo.pWaitDstStageMask = waitStages;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &mCommandBuffers[imageIndex];
+        submitInfo.signalSemaphoreCount = 1;
+        submitInfo.pSignalSemaphores = signalSemaphores;
+
+        uint32_t submitCount = 1;
+        if (vkQueueSubmit(mGraphicsQueue, submitCount, &submitInfo, nullFence) != VK_SUCCESS) {
+            throw std::runtime_error("failed to submit draw command buffer");
+        }
+
+        // wait for the signal that the command buffer finished
+        VkSwapchainKHR swapChains[] = { mSwapChain };
+        VkPresentInfoKHR presentInfo{};
+        presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+        presentInfo.waitSemaphoreCount = 1;
+        presentInfo.pWaitSemaphores = signalSemaphores;
+        presentInfo.swapchainCount = 1;
+        presentInfo.pSwapchains = swapChains;
+        presentInfo.pImageIndices = &imageIndex;
+
+        // used if there were multiple swap chains that could return success/fail statuses, but 
+        // we're just using a single swap chain, so we don't need this
+        presentInfo.pResults = nullptr;
+
+        vkQueuePresentKHR(mPresentationQueue, &presentInfo);
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -1402,9 +1360,11 @@ private:
     Creator:    John Cox, 10/2018
     ---------------------------------------------------------------------------------------------*/
     void MainLoop() {
-        //while (!glfwWindowShouldClose(mWindow)) {
-        //    glfwPollEvents();
-        //}
+        while (!glfwWindowShouldClose(mWindow)) {
+            glfwPollEvents();
+            DrawFrame();
+        }
+        vkDeviceWaitIdle(mLogicalDevice);
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -1413,6 +1373,8 @@ private:
     Creator:    John Cox, 10/2018
     ---------------------------------------------------------------------------------------------*/
     void Cleanup() {
+        vkDestroySemaphore(mLogicalDevice, mSemaphoreImageAvailable, nullptr);
+        vkDestroySemaphore(mLogicalDevice, mSemaphoreRenderFinished, nullptr);
         vkDestroyCommandPool(mLogicalDevice, mCommandPool, nullptr);
         for (auto &framebuffer : mSwapChainFramebuffers) {
             vkDestroyFramebuffer(mLogicalDevice, framebuffer, nullptr);
