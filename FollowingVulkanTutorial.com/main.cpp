@@ -215,6 +215,7 @@ private:
     VkFormat mSwapChainImageFormat = VkFormat::VK_FORMAT_UNDEFINED;
     VkExtent2D mSwapChainExtent{};
     std::vector<VkImageView> mSwapChainImageViews;
+    std::vector<VkFramebuffer> mSwapChainFramebuffers;
     VkRenderPass mRenderPass;
     VkPipelineLayout mPipelineLayout;    //??what is this??
     VkPipeline mGraphicsPipeline;
@@ -1218,6 +1219,7 @@ private:
         pipelineCreateInfo.pMultisampleState = &multisamplingCreateInfo;
         pipelineCreateInfo.pDepthStencilState = nullptr;
         pipelineCreateInfo.pColorBlendState = &colorBlendCreateInfo;
+        pipelineCreateInfo.pDynamicState = nullptr;
         pipelineCreateInfo.layout = mPipelineLayout;
         pipelineCreateInfo.renderPass = mRenderPass;
         pipelineCreateInfo.subpass = 0;
@@ -1233,6 +1235,32 @@ private:
         // created with a "vkCreate*(...)" call, it needs to be explicitly destroyed.
         vkDestroyShaderModule(mLogicalDevice, vertShaderModule, nullptr);
         vkDestroyShaderModule(mLogicalDevice, fragShaderModule, nullptr);
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        Creates a GLFW window (??anything else??).
+    Creator:    John Cox, 11/2018
+    ---------------------------------------------------------------------------------------------*/
+    void CreateFramebuffers() {
+        mSwapChainFramebuffers.resize(mSwapChainImageViews.size());
+        for (size_t i = 0; i < mSwapChainImageViews.size(); i++) {
+            VkImageView attachments[] = {
+                mSwapChainImageViews[i]
+            };
+            VkFramebufferCreateInfo frameBufferCreateInfo{};
+            frameBufferCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+            frameBufferCreateInfo.renderPass = mRenderPass;
+            frameBufferCreateInfo.attachmentCount = 1;
+            frameBufferCreateInfo.pAttachments = attachments;
+            frameBufferCreateInfo.width = mSwapChainExtent.width;
+            frameBufferCreateInfo.height = mSwapChainExtent.height;
+            frameBufferCreateInfo.layers = 1;
+
+            if (vkCreateFramebuffer(mLogicalDevice, &frameBufferCreateInfo, nullptr, &mSwapChainFramebuffers[i]) != VK_SUCCESS) {
+                throw std::runtime_error("failed to create framebuffer");
+            }
+        }
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -1288,6 +1316,9 @@ private:
     Creator:    John Cox, 10/2018
     ---------------------------------------------------------------------------------------------*/
     void Cleanup() {
+        for (auto &framebuffer : mSwapChainFramebuffers) {
+            vkDestroyFramebuffer(mLogicalDevice, framebuffer, nullptr);
+        }
         vkDestroyPipeline(mLogicalDevice, mGraphicsPipeline, nullptr);
         vkDestroyPipelineLayout(mLogicalDevice, mPipelineLayout, nullptr);
         vkDestroyRenderPass(mLogicalDevice, mRenderPass, nullptr);
