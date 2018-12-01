@@ -219,7 +219,8 @@ private:
     VkRenderPass mRenderPass;
     VkPipelineLayout mPipelineLayout;    //??what is this??
     VkPipeline mGraphicsPipeline;
-
+    VkCommandPool mCommandPool;
+    std::vector<VkCommandBuffer> mCommandBuffers;
 
     const std::vector<const char *> mRequiredDeviceExtensions {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME
@@ -1239,7 +1240,8 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        Creates a GLFW window (??anything else??).
+        Generates a framebuffer object for each image in the swap chain.
+        ??how is the image in the swap chain different from the framebuffer for it??
     Creator:    John Cox, 11/2018
     ---------------------------------------------------------------------------------------------*/
     void CreateFramebuffers() {
@@ -1261,6 +1263,99 @@ private:
                 throw std::runtime_error("failed to create framebuffer");
             }
         }
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        Generates the command pool object that will store the command buffers. Command pools
+        manage the memory that is used to store the buffers, and command buffers are allocated
+        from them.
+
+        Note: Each command pool can only allocate command buffers for a single type of queue.
+        This means that there cannot exist a command buffer that contains both compute and
+        graphics commands. Why? The API spec for Mantle (forerunner to Vulkan) describes the
+        "Queue submission model" in the section "Execution Model" as different CPU threads
+        submitting commands to different queues (graphics queue, compute queue), which are in turn
+        submitted to the GPU's "3D Engine" and "Compute Engine", respectively. Vulkan's queue
+        family indices are looked up with the VkPhysicalDevice, and combine this with the Mantle
+        API descriptions, and it seems that the command queues, and thus the command queue
+        families, are a software design model that accomodate's the GPU hardware design that
+        implements separate graphics and compute "engines" (??what are these??)
+    Creator:    John Cox, 11/2018
+    ---------------------------------------------------------------------------------------------*/
+    void CreateCommandPool() {
+        QueueFamilyIndices queueFamilyIndices = FindQueueFamilies(mPhysicalDevice);
+        VkCommandPoolCreateInfo commandPoolCreateInfo{};
+        commandPoolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        commandPoolCreateInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
+
+        if (vkCreateCommandPool(mLogicalDevice, &commandPoolCreateInfo, nullptr, &mCommandPool) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create command pool");
+        }
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        Generates a dedicated command buffer for each framebuffer.
+
+        Note: 
+        - "Primary" level command buffers can be submitted to a queue for execution. 
+        - "Secondary" level command buffers cannot be submitted directly, but can be submitted 
+            from primary command buffers. Primary buffers cannot do this.
+    Creator:    John Cox, 11/2018
+    ---------------------------------------------------------------------------------------------*/
+    void CreateCommandBuffers() {
+        mCommandBuffers.resize(mSwapChainFramebuffers.size());
+
+        // Note: "AllocateInfo", not "CreateInfo", because command buffers are allocated from the
+        // command pool, not "created", which, in Vulkan terminology, involves creating memory 
+        // for it. There is already memory in the command pool, so we're just allocating from it.
+        VkCommandBufferAllocateInfo commandBufferAllocateInfo{};
+        commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        commandBufferAllocateInfo.commandPool = mCommandPool;
+        commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        commandBufferAllocateInfo.commandBufferCount = static_cast<uint32_t>(mCommandBuffers.size());
+
+        for (size_t i = 0; i < mCommandBuffers.size(); i++) {
+            auto &currentCommandBuffer = mCommandBuffers[i];
+
+            VkCommandBufferBeginInfo commandBufferBeginInfo{};
+            commandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            commandBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+            commandBufferBeginInfo.pInheritanceInfo = nullptr;
+            if (vkBeginCommandBuffer(currentCommandBuffer, &commandBufferBeginInfo) != VK_SUCCESS) {
+                throw std::runtime_error("failed to begin recording command buffer");
+            }
+
+            VkRenderPassBeginInfo renderPassBeginInfo{};
+            renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+            renderPassBeginInfo.renderPass = mRenderPass;
+            renderPassBeginInfo.framebuffer = mSwapChainFramebuffers[i];
+            renderPassBeginInfo.renderArea.offset = { 0, 0 };
+            renderPassBeginInfo.renderArea.extent = mSwapChainExtent;
+
+            // defines the colors for the color attachment's .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR
+            VkClearValue clearColor = { 0.0, 0.0f, 0.0f, 1.0f };
+            renderPassBeginInfo.clearValueCount = 1;
+            renderPassBeginInfo.pClearValues = &clearColor;
+
+            vkCmdBeginRenderPass(currentCommandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+            {
+                vkCmdBindPipeline(currentCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mGraphicsPipeline);
+
+                uint32_t vertexCount = 3;
+                uint32_t instanceCount = 1;
+                uint32_t firstVertex = 0;   // lowest value of gl_VertexIndex
+                uint32_t firstInstance = 0; // lowest value of gl_InstanceIndex
+                vkCmdDraw(currentCommandBuffer, vertexCount, instanceCount, firstVertex, firstInstance);
+            }
+            vkCmdEndRenderPass(currentCommandBuffer);
+            if (vkEndCommandBuffer(currentCommandBuffer) != VK_SUCCESS) {
+                throw std::runtime_error("failed to record command buffer");
+            }
+        }
+
+
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -1297,6 +1392,8 @@ private:
         CreateImageViews();
         CreateRenderPass();
         CreateGraphicsPipeline();
+        CreateCommandPool();
+        CreateCommandBuffers();
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -1316,6 +1413,7 @@ private:
     Creator:    John Cox, 10/2018
     ---------------------------------------------------------------------------------------------*/
     void Cleanup() {
+        vkDestroyCommandPool(mLogicalDevice, mCommandPool, nullptr);
         for (auto &framebuffer : mSwapChainFramebuffers) {
             vkDestroyFramebuffer(mLogicalDevice, framebuffer, nullptr);
         }
