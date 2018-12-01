@@ -215,7 +215,9 @@ private:
     VkFormat mSwapChainImageFormat = VkFormat::VK_FORMAT_UNDEFINED;
     VkExtent2D mSwapChainExtent{};
     std::vector<VkImageView> mSwapChainImageViews;
+    VkRenderPass mRenderPass;
     VkPipelineLayout mPipelineLayout;    //??what is this??
+
 
 
     const std::vector<const char *> mRequiredDeviceExtensions {
@@ -519,8 +521,11 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        If the preferred (??why??) format (B8G8R8A8 nonlinear (??what??)) is available, return 
-        that. Else return the first available supported image format.
+        If the preferred format sRGB (B8G8R8A8 nonlinear) is available, return that. Else return 
+        the first available supported image format.
+
+        More on non-linear color space:
+        https://stackoverflow.com/questions/12524623/what-are-the-practical-differences-when-working-with-colors-in-a-linear-vs-a-no
     Creator:    John Cox, 11/2018
     ---------------------------------------------------------------------------------------------*/
     VkSurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &availableFormats) {
@@ -953,12 +958,51 @@ private:
         in a render pass object..."
 
         ??what? "color and depth buffers"? "framebuffer attachments"??
+
+        https://vulkan-tutorial.com/Drawing_a_triangle/Graphics_pipeline_basics/Render_passes
+
+        Render Passes in Vulkan
+        https://www.youtube.com/watch?v=x2SGVjlVGhE
     Creator:    John Cox, 11/2018
     ---------------------------------------------------------------------------------------------*/
     void CreateRenderPass() {
-        VkAttachmentDescription colorAttachment{};
-        colorAttachment.format = mSwapChainImageFormat;
-        colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        // ??what is an "attachment"??
+        VkAttachmentDescription colorAttachmentDesc{};
+        colorAttachmentDesc.format = mSwapChainImageFormat;
+        colorAttachmentDesc.samples = VK_SAMPLE_COUNT_1_BIT;    // not doing multisampling yet, so ??one sample per texture? per pixel??
+        colorAttachmentDesc.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        colorAttachmentDesc.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        colorAttachmentDesc.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        colorAttachmentDesc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        colorAttachmentDesc.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;  // don't know, don't care
+        colorAttachmentDesc.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+        // "Every subpass references one or more of the attachments that we've described using the 
+        // structure in the previous sections."
+        VkAttachmentReference colorAttachmentRef{};
+        colorAttachmentRef.attachment = 0;  // index into attachment descriptions array
+        colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+        //??multiple attachments in a single subpass??
+        // Note: "The index of the attachment in this array is directly referenced form the 
+        // fragment shader with `layout(location=0) out vec4 outColor`."
+        //??what? tinker with this once you can draw something??
+        VkSubpassDescription subpass{};
+        subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        subpass.colorAttachmentCount = 1;
+        subpass.pColorAttachments = &colorAttachmentRef;
+
+        // finally, make the render pass object itself
+        VkRenderPassCreateInfo renderPassCreateInfo{};
+        renderPassCreateInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+        renderPassCreateInfo.attachmentCount = 1;
+        renderPassCreateInfo.pAttachments = &colorAttachmentDesc;
+        renderPassCreateInfo.subpassCount = 1;
+        renderPassCreateInfo.pSubpasses = &subpass;
+
+        if (vkCreateRenderPass(mLogicalDevice, &renderPassCreateInfo, nullptr, &mRenderPass) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create render pass");
+        }
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -1223,6 +1267,7 @@ private:
     ---------------------------------------------------------------------------------------------*/
     void Cleanup() {
         vkDestroyPipelineLayout(mLogicalDevice, mPipelineLayout, nullptr);
+        vkDestroyRenderPass(mLogicalDevice, mRenderPass, nullptr);
         for (auto &imageView : mSwapChainImageViews) {
             vkDestroyImageView(mLogicalDevice, imageView, nullptr);
         }
