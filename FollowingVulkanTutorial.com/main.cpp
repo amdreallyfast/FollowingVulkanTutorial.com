@@ -217,7 +217,7 @@ private:
     std::vector<VkImageView> mSwapChainImageViews;
     VkRenderPass mRenderPass;
     VkPipelineLayout mPipelineLayout;    //??what is this??
-
+    VkPipeline mGraphicsPipeline;
 
 
     const std::vector<const char *> mRequiredDeviceExtensions {
@@ -1207,6 +1207,28 @@ private:
             throw std::runtime_error("failed to create pipeline layout");
         }
 
+        VkGraphicsPipelineCreateInfo pipelineCreateInfo{};
+        pipelineCreateInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+        pipelineCreateInfo.stageCount = 2;
+        pipelineCreateInfo.pStages = shaderStageCreateInfos.data();
+        pipelineCreateInfo.pVertexInputState = &vertexInputCreateInfo;
+        pipelineCreateInfo.pInputAssemblyState = &inputAssemblyCreateInfo;
+        pipelineCreateInfo.pViewportState = &viewportStateCreateInfo;
+        pipelineCreateInfo.pRasterizationState = &rasterizerCreateInfo;
+        pipelineCreateInfo.pMultisampleState = &multisamplingCreateInfo;
+        pipelineCreateInfo.pDepthStencilState = nullptr;
+        pipelineCreateInfo.pColorBlendState = &colorBlendCreateInfo;
+        pipelineCreateInfo.layout = mPipelineLayout;
+        pipelineCreateInfo.renderPass = mRenderPass;
+        pipelineCreateInfo.subpass = 0;
+        pipelineCreateInfo.basePipelineHandle = VK_NULL_HANDLE; // not deriving from existing pipeline
+        pipelineCreateInfo.basePipelineIndex = -1;
+
+        uint32_t pipelineCreateInfoCount = 1;
+        if (vkCreateGraphicsPipelines(mLogicalDevice, VK_NULL_HANDLE, pipelineCreateInfoCount, &pipelineCreateInfo, nullptr, &mGraphicsPipeline) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create graphics pipeline");
+        }
+
         // Note: Vulkan's packaged shader code is only necessary during loading, but since it was 
         // created with a "vkCreate*(...)" call, it needs to be explicitly destroyed.
         vkDestroyShaderModule(mLogicalDevice, vertShaderModule, nullptr);
@@ -1266,6 +1288,7 @@ private:
     Creator:    John Cox, 10/2018
     ---------------------------------------------------------------------------------------------*/
     void Cleanup() {
+        vkDestroyPipeline(mLogicalDevice, mGraphicsPipeline, nullptr);
         vkDestroyPipelineLayout(mLogicalDevice, mPipelineLayout, nullptr);
         vkDestroyRenderPass(mLogicalDevice, mRenderPass, nullptr);
         for (auto &imageView : mSwapChainImageViews) {
