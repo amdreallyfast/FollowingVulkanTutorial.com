@@ -116,6 +116,7 @@ private:
     std::vector<VkSemaphore> mSemaphoresRenderFinished;
     std::vector<VkFence> mInFlightFences;
     size_t mCurrentFrame = 0;
+    bool mFrameBufferResized = false;   // not all drivers properly handle window resize notifications in Vulkan
 
     const std::vector<const char *> mRequiredDeviceExtensions{
         VK_KHR_SWAPCHAIN_EXTENSION_NAME
@@ -522,20 +523,25 @@ private:
     Creator:    John Cox, 11/2018
     ---------------------------------------------------------------------------------------------*/
     VkExtent2D ChooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities) {
-        if (capabilities.currentExtent.width == std::numeric_limits<uint32_t>::max()) {
-            printf("");
-        }
-
         if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
             // window manager will select image extent for us
             return capabilities.currentExtent;
         }
 
+        int width = 0;
+        int height = 0;
+        glfwGetFramebufferSize(mWindow, &width, &height);
+        VkExtent2D actualExtent = {
+            static_cast<uint32_t>(width),
+            static_cast<uint32_t>(height)
+        };
+
+        std::cout << "Extent2D width: " << width << ", height: " << height << ", window width: " << mWindowWidth << ", height: " << mWindowHeight << std::endl;
+
         // manually clamp to window size
-        // Note: Surface capability can be ??how big? how small??
-        uint32_t width = std::max(capabilities.minImageExtent.width, std::min(capabilities.maxImageExtent.width, mWindowWidth));
-        uint32_t height = std::max(capabilities.minImageExtent.height, std::min(capabilities.maxImageExtent.height, mWindowHeight));
-        return VkExtent2D{ width, height };
+        actualExtent.width = std::max(capabilities.minImageExtent.width, std::min(capabilities.maxImageExtent.width, actualExtent.width));
+        actualExtent.height = std::max(capabilities.minImageExtent.height, std::min(capabilities.maxImageExtent.height, actualExtent.height));
+        return actualExtent;
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -799,6 +805,54 @@ private:
         mSwapChainImageFormat = surfaceFormat.format;
         mSwapChainExtent = extent;
     }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        This code is used during swap chain recreation, so it was moved from program-end Cleanup()
+        to here.
+    Creator:    John Cox, 12/2018
+    ---------------------------------------------------------------------------------------------*/
+    void CleanupSwapChain() {
+        for (auto &framebuffer : mSwapChainFramebuffers) {
+            vkDestroyFramebuffer(mLogicalDevice, framebuffer, nullptr);
+        }
+        vkFreeCommandBuffers(mLogicalDevice, mCommandPool, static_cast<uint32_t>(mCommandBuffers.size()), mCommandBuffers.data());
+        vkDestroyPipeline(mLogicalDevice, mGraphicsPipeline, nullptr);
+        vkDestroyPipelineLayout(mLogicalDevice, mPipelineLayout, nullptr);
+        vkDestroyRenderPass(mLogicalDevice, mRenderPass, nullptr);
+        for (auto &imageView : mSwapChainImageViews) {
+            vkDestroyImageView(mLogicalDevice, imageView, nullptr);
+        }
+        vkDestroySwapchainKHR(mLogicalDevice, mSwapChain, nullptr);
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        During window resizing, image extent is no longer valid, and therefore the swap chain 
+        create info is no longer valid, and neither are the image views, or the render pass, or 
+        anything downstream that depended upon image extent.
+    Creator:    John Cox, 12/2018
+    ---------------------------------------------------------------------------------------------*/
+    void RecreateSwapChain() {
+        int width = 0;
+        int height = 0;
+        while (width == 0 || height == 0) {
+            std::cout << "Waiting on frame buffer" << std::endl;
+            glfwGetFramebufferSize(mWindow, &width, &height);
+            glfwWaitEvents();
+        }
+        vkDeviceWaitIdle(mLogicalDevice);
+        
+        CleanupSwapChain();
+
+        CreateSwapChain();
+        CreateImageViews();
+        CreateRenderPass();
+        CreateGraphicsPipeline();
+        CreateFramebuffers();
+        CreateCommandBuffers();
+    }
+
 
     /*---------------------------------------------------------------------------------------------
     Description:
@@ -1092,7 +1146,11 @@ private:
         //    }
         //    finalColor = finalColor & colorWriteMask;
         VkPipelineColorBlendAttachmentState colorBlendAttachmentState{};
-        colorBlendAttachmentState.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        colorBlendAttachmentState.colorWriteMask = 
+            VK_COLOR_COMPONENT_R_BIT | 
+            VK_COLOR_COMPONENT_G_BIT | 
+            VK_COLOR_COMPONENT_B_BIT | 
+            VK_COLOR_COMPONENT_A_BIT;
         colorBlendAttachmentState.blendEnable = VK_FALSE;
         //colorBlendAttachmentState.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;    //??
         //colorBlendAttachmentState.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;   //??
@@ -1300,6 +1358,20 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
+        Called when GLFW detects a change in the size of the renderable area.
+
+        Note: Created static because GLFW callback registration function was built with C-style 
+        function pointers in mind and therefore does not know how to call a member function with 
+        the correct "this" pointer. 
+    Creator:    John Cox, 12/2018
+    ---------------------------------------------------------------------------------------------*/
+    static void FramebufferResizeCallback(GLFWwindow *window, int width, int height) {
+        auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+        app->mFrameBufferResized = true;
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
         Creates a GLFW window (??anything else??).
     Creator:    John Cox, 10/2018
     ---------------------------------------------------------------------------------------------*/
@@ -1311,11 +1383,10 @@ private:
         // Vulkan, so tell it to use "no API".
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
-        // resizing takes special care; we'll handle that later; disable resizing for now
-        glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-
         GLFWmonitor *monitor = nullptr;
         mWindow = glfwCreateWindow(mWindowWidth, mWindowHeight, "Vulkan", monitor, nullptr);
+        glfwSetWindowUserPointer(mWindow, this);    // gets a class pointer into callback function
+        glfwSetFramebufferSizeCallback(mWindow, FramebufferResizeCallback);
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -1358,11 +1429,21 @@ private:
         VkBool32 waitAllFences = VK_TRUE; // we only wait on one fence, so "wait all" irrelevant
         uint64_t timeout_ns = std::numeric_limits<uint64_t>::max();
         vkWaitForFences(mLogicalDevice, 1, pCurrentFrameFence, waitAllFences, timeout_ns);
-        vkResetFences(mLogicalDevice, 1, pCurrentFrameFence);
 
         uint32_t imageIndex = 0;
         VkFence nullFence = VK_NULL_HANDLE;
-        vkAcquireNextImageKHR(mLogicalDevice, mSwapChain, timeout_ns, mSemaphoresImageAvailable[inflightFrameIndex], nullFence, &imageIndex);
+        VkResult result = vkAcquireNextImageKHR(mLogicalDevice, mSwapChain, timeout_ns, mSemaphoresImageAvailable[inflightFrameIndex], nullFence, &imageIndex);
+        if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+            RecreateSwapChain();
+            return;
+        }
+        else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+            throw std::runtime_error("failed to acquire swap chain image");
+        }
+
+        // only reset the fences once we're good to go (that is, have image and swap chain is not 
+        // out of date)
+        vkResetFences(mLogicalDevice, 1, pCurrentFrameFence);
 
         // submit the command buffer for this image
         // Note: In short, this reads, "wait for 'image available semaphore', execute command 
@@ -1401,7 +1482,14 @@ private:
         // we're just using a single swap chain, so we don't need this
         presentInfo.pResults = nullptr;
 
-        vkQueuePresentKHR(mPresentationQueue, &presentInfo);
+        result = vkQueuePresentKHR(mPresentationQueue, &presentInfo);
+        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || mFrameBufferResized) {
+            RecreateSwapChain();
+            mFrameBufferResized = false;
+        }
+        else if (result != VK_SUCCESS) {
+            throw std::runtime_error("failed to present swap chain image");
+        }
 
         //vkQueueWaitIdle(mPresentationQueue);
         mCurrentFrame++;
@@ -1426,26 +1514,18 @@ private:
     Creator:    John Cox, 10/2018
     ---------------------------------------------------------------------------------------------*/
     void Cleanup() {
+        CleanupSwapChain();
+        
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
             vkDestroySemaphore(mLogicalDevice, mSemaphoresImageAvailable[i], nullptr);
             vkDestroySemaphore(mLogicalDevice, mSemaphoresRenderFinished[i], nullptr);
             vkDestroyFence(mLogicalDevice, mInFlightFences[i], nullptr);
         }
         vkDestroyCommandPool(mLogicalDevice, mCommandPool, nullptr);
-        for (auto &framebuffer : mSwapChainFramebuffers) {
-            vkDestroyFramebuffer(mLogicalDevice, framebuffer, nullptr);
-        }
-        vkDestroyPipeline(mLogicalDevice, mGraphicsPipeline, nullptr);
-        vkDestroyPipelineLayout(mLogicalDevice, mPipelineLayout, nullptr);
-        vkDestroyRenderPass(mLogicalDevice, mRenderPass, nullptr);
-        for (auto &imageView : mSwapChainImageViews) {
-            vkDestroyImageView(mLogicalDevice, imageView, nullptr);
-        }
-        vkDestroySwapchainKHR(mLogicalDevice, mSwapChain, nullptr);
         vkDestroyDevice(mLogicalDevice, nullptr);
         vkDestroySurfaceKHR(mInstance, mSurface, nullptr);
 
-        if (mCallback != 0) {
+        if (mCallback != VK_NULL_HANDLE) {
             // Note: This is an externally synchronized object (that is, created at runtime in a 
             // forked thread), and so *must* not be called when a callback is active. (??how to enforce??)
             DestroyDebugUtilsMessengEXT(mInstance, mCallback, nullptr);
