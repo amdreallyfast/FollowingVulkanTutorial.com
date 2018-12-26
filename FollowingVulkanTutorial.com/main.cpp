@@ -85,6 +85,7 @@ private:
     GLFWwindow *mWindow = nullptr;
     uint32_t mWindowWidth = 800;
     uint32_t mWindowHeight = 600;
+    const int MAX_FRAMES_IN_FLIGHT = 2;
 
 #ifdef NDEBUG
     const bool mEnableValidationLayers = false;
@@ -111,8 +112,10 @@ private:
     VkPipeline mGraphicsPipeline;
     VkCommandPool mCommandPool;
     std::vector<VkCommandBuffer> mCommandBuffers;
-    VkSemaphore mSemaphoreImageAvailable;
-    VkSemaphore mSemaphoreRenderFinished;
+    std::vector<VkSemaphore> mSemaphoresImageAvailable;
+    std::vector<VkSemaphore> mSemaphoresRenderFinished;
+    std::vector<VkFence> mInFlightFences;
+    size_t mCurrentFrame = 0;
 
     const std::vector<const char *> mRequiredDeviceExtensions{
         VK_KHR_SWAPCHAIN_EXTENSION_NAME
@@ -180,6 +183,7 @@ private:
         std::vector<VkExtensionProperties> instanceExtensions(instanceExtensionCount);
         vkEnumerateInstanceExtensionProperties(nullptr, &instanceExtensionCount, instanceExtensions.data());
 
+#define PRINT_EXTENSIONS
 #ifndef PRINT_EXTENSIONS
         // carry on
 #else
@@ -187,13 +191,13 @@ private:
         std::string name("    Name: ");
         std::string spec("Spec Version: ");
 
-        std::cout << "Instance extensions (GLFW) required:" << std::endl;
-        ss << std::setfill(' ') << std::left;
-        for (uint32_t i = 0; i < glfwExtensionCount; i++) {
-            ss << std::setw(name.length()) << name
-                << std::setw(40) << glfwExtensions[i] << std::endl;
-        }
-        std::cout << ss.str();
+        //std::cout << "Instance extensions (GLFW) required:" << std::endl;
+        //ss << std::setfill(' ') << std::left;
+        //for (uint32_t i = 0; i < instanceExtensionCount; i++) {
+        //    ss << std::setw(name.length()) << name
+        //        << std::setw(40) << instanceExtensions[i].extensionName << std::endl;
+        //}
+        //std::cout << ss.str();
 
         ss.clear();
         std::cout << "Instance extensions (driver) available:" << std::endl;
@@ -205,6 +209,7 @@ private:
                 << std::setw(3) << ext.specVersion << std::endl;
         }
         std::cout << ss.str();
+#undef PRINT_EXTENSIONS
 #endif // NDEBUG
 
         for (auto &reqExt : requiredExtensions) {
@@ -236,6 +241,28 @@ private:
         vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
         std::vector<VkLayerProperties> availableLayers(layerCount);
         vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
+
+#define PRINT_EXTENSIONS
+#ifndef PRINT_EXTENSIONS
+        // carry on
+#else
+        std::stringstream ss;
+        std::string name("    Name: ");
+        std::string spec("Spec Version: ");
+
+        ss.clear();
+        std::cout << "Instance validation layers (driver) available:" << std::endl;
+        ss << std::setfill(' ') << std::left;
+        for (auto &layer : availableLayers) {
+            ss << std::setw(name.length()) << name
+                << std::setw(40) << layer.layerName
+                << std::setw(spec.length()) << spec
+                << std::setw(3) << layer.specVersion << std::endl;
+        }
+        std::cout << ss.str();
+#undef PRINT_EXTENSIONS
+#endif // NDEBUG
+
 
         for (auto reqLayer : requiredLayers) {
             bool found = false;
@@ -295,6 +322,7 @@ private:
 
         // for debugging
         const std::vector<const char *> requiredValidationLayers{
+            "VK_LAYER_LUNARG_core_validation",
             "VK_LAYER_LUNARG_standard_validation",
         };
         if (mEnableValidationLayers) {
@@ -851,6 +879,10 @@ private:
         should be handled throughout the rendering operations. All of this information is wrapped
         in a render pass object..."
 
+        Note: An "attachment" is one of the Vulkan synonyms for images. See my (mildly popular) 
+        post on Reddit that asked what it is.
+        https://www.reddit.com/r/vulkan/comments/a27cid/what_is_an_attachment_in_the_render_passes/
+
         ??what? "color and depth buffers"? "framebuffer attachments"??
 
         https://vulkan-tutorial.com/Drawing_a_triangle/Graphics_pipeline_basics/Render_passes
@@ -860,7 +892,6 @@ private:
     Creator:    John Cox, 11/2018
     ---------------------------------------------------------------------------------------------*/
     void CreateRenderPass() {
-        // ??what is an "attachment"??
         VkAttachmentDescription colorAttachmentDesc{};
         colorAttachmentDesc.format = mSwapChainImageFormat;
         colorAttachmentDesc.samples = VK_SAMPLE_COUNT_1_BIT;    // not doing multisampling yet, so ??one sample per texture? per pixel??
@@ -1246,13 +1277,24 @@ private:
         "return to swap chain" events occur in order.
     Creator:    John Cox, 11/2018
     ---------------------------------------------------------------------------------------------*/
-    void CreateSemaphores() {
+    void CreateSyncObjects() {
+        mSemaphoresImageAvailable.resize(MAX_FRAMES_IN_FLIGHT);
+        mSemaphoresRenderFinished.resize(MAX_FRAMES_IN_FLIGHT);
+        mInFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
+        
         VkSemaphoreCreateInfo semaphoreCreateInfo{};
         semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
-        if (vkCreateSemaphore(mLogicalDevice, &semaphoreCreateInfo, nullptr, &mSemaphoreImageAvailable) != VK_SUCCESS ||
-            vkCreateSemaphore(mLogicalDevice, &semaphoreCreateInfo, nullptr, &mSemaphoreRenderFinished) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create semaphore");
+        VkFenceCreateInfo fenceCreateInfo{};
+        fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+            if (vkCreateSemaphore(mLogicalDevice, &semaphoreCreateInfo, nullptr, &mSemaphoresImageAvailable[i]) != VK_SUCCESS ||
+                vkCreateSemaphore(mLogicalDevice, &semaphoreCreateInfo, nullptr, &mSemaphoresRenderFinished[i]) != VK_SUCCESS ||
+                vkCreateFence(mLogicalDevice, &fenceCreateInfo, nullptr, &mInFlightFences[i]) != VK_SUCCESS) {
+                throw std::runtime_error("failed to create synchronization objects for a frame");
+            }
         }
     }
 
@@ -1293,7 +1335,7 @@ private:
         CreateFramebuffers();
         CreateCommandPool();
         CreateCommandBuffers();
-        CreateSemaphores();
+        CreateSyncObjects();
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -1310,17 +1352,24 @@ private:
     Creator:    John Cox, 11/2018
     ---------------------------------------------------------------------------------------------*/
     void DrawFrame() {
-        uint32_t imageIndex = 0;
+        // don't submit another queue of graphics commands until 
+        size_t inflightFrameIndex = mCurrentFrame % MAX_FRAMES_IN_FLIGHT;
+        VkFence *pCurrentFrameFence = &mInFlightFences[inflightFrameIndex];
+        VkBool32 waitAllFences = VK_TRUE; // we only wait on one fence, so "wait all" irrelevant
         uint64_t timeout_ns = std::numeric_limits<uint64_t>::max();
+        vkWaitForFences(mLogicalDevice, 1, pCurrentFrameFence, waitAllFences, timeout_ns);
+        vkResetFences(mLogicalDevice, 1, pCurrentFrameFence);
+
+        uint32_t imageIndex = 0;
         VkFence nullFence = VK_NULL_HANDLE;
-        vkAcquireNextImageKHR(mLogicalDevice, mSwapChain, timeout_ns, mSemaphoreImageAvailable, nullFence, &imageIndex);
+        vkAcquireNextImageKHR(mLogicalDevice, mSwapChain, timeout_ns, mSemaphoresImageAvailable[inflightFrameIndex], nullFence, &imageIndex);
 
         // submit the command buffer for this image
         // Note: In short, this reads, "wait for 'image available semaphore', execute command 
         // buffer on the render passes' color attachment, then raise the 'render finished' 
         // semaphore".
-        VkSemaphore waitSemaphores[] = { mSemaphoreImageAvailable };
-        VkSemaphore signalSemaphores[] = { mSemaphoreRenderFinished };
+        VkSemaphore waitSemaphores[] = { mSemaphoresImageAvailable[inflightFrameIndex] };
+        VkSemaphore signalSemaphores[] = { mSemaphoresRenderFinished[inflightFrameIndex] };
         VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -1332,8 +1381,9 @@ private:
         submitInfo.signalSemaphoreCount = 1;
         submitInfo.pSignalSemaphores = signalSemaphores;
 
+        // once all commands have been completed, the provided fence will be signaled
         uint32_t submitCount = 1;
-        if (vkQueueSubmit(mGraphicsQueue, submitCount, &submitInfo, nullFence) != VK_SUCCESS) {
+        if (vkQueueSubmit(mGraphicsQueue, submitCount, &submitInfo, *pCurrentFrameFence) != VK_SUCCESS) {
             throw std::runtime_error("failed to submit draw command buffer");
         }
 
@@ -1352,6 +1402,9 @@ private:
         presentInfo.pResults = nullptr;
 
         vkQueuePresentKHR(mPresentationQueue, &presentInfo);
+
+        //vkQueueWaitIdle(mPresentationQueue);
+        mCurrentFrame++;
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -1373,8 +1426,11 @@ private:
     Creator:    John Cox, 10/2018
     ---------------------------------------------------------------------------------------------*/
     void Cleanup() {
-        vkDestroySemaphore(mLogicalDevice, mSemaphoreImageAvailable, nullptr);
-        vkDestroySemaphore(mLogicalDevice, mSemaphoreRenderFinished, nullptr);
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+            vkDestroySemaphore(mLogicalDevice, mSemaphoresImageAvailable[i], nullptr);
+            vkDestroySemaphore(mLogicalDevice, mSemaphoresRenderFinished[i], nullptr);
+            vkDestroyFence(mLogicalDevice, mInFlightFences[i], nullptr);
+        }
         vkDestroyCommandPool(mLogicalDevice, mCommandPool, nullptr);
         for (auto &framebuffer : mSwapChainFramebuffers) {
             vkDestroyFramebuffer(mLogicalDevice, framebuffer, nullptr);

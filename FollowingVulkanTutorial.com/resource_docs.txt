@@ -1,0 +1,14 @@
+Vulkan spec
+file:///C:/ThirdParty/VulkanSDK/1.1.85.0/Documentation/vkspec.html#_framebuffers
+
+An easier to read, though older Vulkan spec that I can't find an updated version of
+https://vulkan.lunarg.com/doc/view/1.0.33.0/linux/vkspec.chunked/ch07s03.html
+
+The Mantle API spec is often easier to understand than the Vulkan spec and defines things in ways 
+that the Vulkan spec doesn't, if the vulkan spec defines them at all.
+https://www.amd.com/Documents/Mantle-Programming-Guide-and-API-Reference.pdf
+
+TODO: RenderDoc tutorial to debug this thing and see how things are operating
+https://renderdoc.org/
+https://www.youtube.com/watch?v=EMFG5wmng-M
+
