@@ -74,7 +74,7 @@
     <LibraryPath>C:\ThirdParty\VulkanSDK\1.1.85.0\Lib32;C:\ThirdParty\glfw\glfw-3.2.1.bin.WIN32\lib-vc2015;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>C:\ThirdParty\VulkanSDK\1.1.85.0\Include;C:\ThirdParty\glfw\glfw-3.2.1.bin.WIN64\include;$(IncludePath)</IncludePath>
+    <IncludePath>C:\ThirdParty\VulkanSDK\1.1.85.0\Include;C:\ThirdParty\glfw\glfw-3.2.1.bin.WIN64\include;C:\ThirdParty\glm-0.9.9.2;$(IncludePath)</IncludePath>
     <LibraryPath>C:\ThirdParty\VulkanSDK\1.1.85.0\Lib;C:\ThirdParty\glfw\glfw-3.2.1.bin.WIN64\lib-vc2015;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
