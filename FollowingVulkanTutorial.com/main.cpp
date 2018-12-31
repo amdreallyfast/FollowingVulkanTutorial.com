@@ -50,14 +50,22 @@ struct Vertex {
     }
 };
 
-// Note: In Vulkan, unlike OpenGL, (0,0) is in the top left like every other 
-// image-standard-following program.
-const std::vector<Vertex> gVertices = {
-    {{+0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-    {{+0.5f, +0.5f}, {0.0f, 1.0f, 0.0f}},
-    {{-0.5f, +0.5f}, {0.0f, 0.0f, 1.0f}},
+// Note: In Vulkan, unlike OpenGL, Normalized Device Coordinate (NDC) (-1,-1) is the top left like 
+// Direct3D. In OpenGL, NDC (-1,-1) was the bottom left.
+const std::vector<Vertex> gVertexValues = {
+    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+    {{+0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+    {{+0.5f, +0.5f}, {0.0f, 0.0f, 1.0f}},
+    {{-0.5f, +0.5f}, {1.0f, 1.0f, 1.0f}},
 };
 
+// Note: If we have fewer than 65535 (2^16-1) unique vertices, we can save space on indices by 
+// using 16bit unsigned integers. If we have more than that many unique vertices, then we will 
+// have to use 32bit unsigned integer indices.
+const std::vector<uint16_t> gVertexIndices = {
+    0,1,2,
+    2,3,0,
+};
 
 
 /*-------------------------------------------------------------------------------------------------
@@ -165,6 +173,8 @@ private:
     bool mFrameBufferResized = false;   // not all drivers properly handle window resize notifications in Vulkan
     VkBuffer mVertexBuffer;
     VkDeviceMemory mVertexBufferMemory;
+    VkBuffer mVertexIndexBuffer;
+    VkDeviceMemory mVertexIndexBufferMemory;
 
     const std::vector<const char *> mRequiredDeviceExtensions{
         VK_KHR_SWAPCHAIN_EXTENSION_NAME
@@ -1367,11 +1377,15 @@ private:
                 uint32_t bindingCounter = 1;
                 vkCmdBindVertexBuffers(currentCommandBuffer, firstBindingIndex, bindingCounter, vertexBuffers, offsets);
 
-                uint32_t vertexCount = static_cast<uint32_t>(gVertices.size());
+                VkDeviceSize offset = 0;
+                vkCmdBindIndexBuffer(currentCommandBuffer, mVertexIndexBuffer, offset, VK_INDEX_TYPE_UINT16);
+
+                uint32_t indexCount = static_cast<uint32_t>(gVertexIndices.size());
                 uint32_t instanceCount = 1;
-                uint32_t firstVertex = 0;   // lowest value of gl_VertexIndex
-                uint32_t firstInstance = 0; // lowest value of gl_InstanceIndex
-                vkCmdDraw(currentCommandBuffer, vertexCount, instanceCount, firstVertex, firstInstance);
+                uint32_t firstIndex = 0;
+                uint32_t vertexOffset = 0;  // you can add a constant offset to the indices (??why would you do that??)
+                uint32_t firstInstance = 0;
+                vkCmdDrawIndexed(currentCommandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
             }
             vkCmdEndRenderPass(currentCommandBuffer);
             if (vkEndCommandBuffer(currentCommandBuffer) != VK_SUCCESS) {
@@ -1411,7 +1425,12 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        ??
+        Not all memory is created equal. Some is only available on the GPU ("device local"), some 
+        is visible to the host (the program), some is coherent (immediately copied to a duplicate 
+        chunk of GPU memory upon writing, though this has system-memory->GPU-memory transfer 
+        costs), etc.
+
+        ??why are there a bunch of property-less pieces of memory??
     Creator:    John Cox, 12/2018
     ---------------------------------------------------------------------------------------------*/
     uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
@@ -1530,6 +1549,39 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
+        To avoid duplicate vertex data, we will tellt he drawing commands to use vertex by index 
+        instead of sequentially plucking out 3 vertices at a time from the vertex buffer. After 
+        setting this up, the drawing will sequentially pluck out 3 indices at a time from the 
+        index buffer, where it is cheaper to have duplicates (16bit duplicate indices much cheaper
+        than duplicating an entire 2x 32bit position float + 3x 32bit color float vertex).
+    Creator:    John Cox, 12/2018
+    ---------------------------------------------------------------------------------------------*/
+    void CreateVertexIndexBuffer() {
+        VkDeviceSize bufferSize = sizeof(gVertexIndices[0]) * gVertexIndices.size();
+
+        VkBufferUsageFlags bufferUsage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        VkMemoryPropertyFlags memProperties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        VkBuffer stagingBuffer = VK_NULL_HANDLE;
+        VkDeviceMemory stagingBufferMemory = VK_NULL_HANDLE;
+        CreateBuffer(bufferSize, bufferUsage, memProperties, stagingBuffer, stagingBufferMemory);
+
+        void *data = nullptr;
+        VkDeviceSize offset = 0;
+        VkMemoryMapFlags flags = 0;
+        vkMapMemory(mLogicalDevice, stagingBufferMemory, offset, bufferSize, flags, &data);
+        memcpy(data, gVertexIndices.data(), static_cast<size_t>(bufferSize));
+        vkUnmapMemory(mLogicalDevice, stagingBufferMemory);
+
+        bufferUsage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+        memProperties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+        CreateBuffer(bufferSize, bufferUsage, memProperties, mVertexIndexBuffer, mVertexIndexBufferMemory);
+        CopyBuffer(stagingBuffer, mVertexIndexBuffer, bufferSize);
+        vkDestroyBuffer(mLogicalDevice, stagingBuffer, nullptr);
+        vkFreeMemory(mLogicalDevice, stagingBufferMemory, nullptr);
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
         Creates a non-device-local but host-visible and host-coherent buffer, meaning that the 
         buffer will reside in system memory, though it will have a GPU-memory equivalent, and the 
         program will have write access and that it will be immediately uploaded to the GPU upon 
@@ -1545,7 +1597,7 @@ private:
     Creator:    John Cox, 12/2018
     ---------------------------------------------------------------------------------------------*/
     void CreateVertexBuffer() {
-        VkDeviceSize bufferSize = sizeof(gVertices[0]) * gVertices.size();
+        VkDeviceSize bufferSize = sizeof(gVertexValues[0]) * gVertexValues.size();
         
         VkBufferUsageFlags bufferUsage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
         VkMemoryPropertyFlags memProperties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
@@ -1557,7 +1609,7 @@ private:
         VkDeviceSize offset = 0;
         VkMemoryMapFlags flags = 0;
         vkMapMemory(mLogicalDevice, stagingBufferMemory, offset, bufferSize, flags, &data);
-        memcpy(data, gVertices.data(), static_cast<size_t>(bufferSize));
+        memcpy(data, gVertexValues.data(), static_cast<size_t>(bufferSize));
         vkUnmapMemory(mLogicalDevice, stagingBufferMemory);
         
         bufferUsage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
@@ -1619,6 +1671,7 @@ private:
         CreateFramebuffers();
         CreateCommandPool();
         CreateVertexBuffer();
+        CreateVertexIndexBuffer();
         CreateCommandBuffers();
         CreateSyncObjects();
     }
@@ -1731,6 +1784,9 @@ private:
         
         vkDestroyBuffer(mLogicalDevice, mVertexBuffer, nullptr);
         vkFreeMemory(mLogicalDevice, mVertexBufferMemory, nullptr);
+        vkDestroyBuffer(mLogicalDevice, mVertexIndexBuffer, nullptr);
+        vkFreeMemory(mLogicalDevice, mVertexIndexBufferMemory, nullptr);
+
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
             vkDestroySemaphore(mLogicalDevice, mSemaphoresImageAvailable[i], nullptr);
             vkDestroySemaphore(mLogicalDevice, mSemaphoresRenderFinished[i], nullptr);
