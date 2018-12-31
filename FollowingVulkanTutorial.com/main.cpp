@@ -1,5 +1,6 @@
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
+//#define GLFW_INCLUDE_VULKAN
+//#include <GLFW/glfw3.h>
+#include "vulkan_pch.h"
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 #include <iostream>

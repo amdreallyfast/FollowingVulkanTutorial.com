@@ -27,11 +27,19 @@
     <ClCompile Include="backup.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="vulkan_pch.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="cpp.hint" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="resource_docs.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="vulkan_pch.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
