@@ -1418,7 +1418,29 @@ private:
         VkPhysicalDeviceMemoryProperties memoryProperties{};
         vkGetPhysicalDeviceMemoryProperties(mPhysicalDevice, &memoryProperties);
         for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; i++) {
-            bool typeOk = (typeFilter & (1 << i));
+            //std::stringstream ss;
+            //ss << "memory type[" << i << "]:";
+            //if ((memoryProperties.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0) {
+            //    ss << " DEVICE_LOCAL";
+            //}
+            //if ((memoryProperties.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0) {
+            //    ss << " HOST_VISIBLE";
+            //}
+            //if ((memoryProperties.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0) {
+            //    ss << " HOST_COHERENT";
+            //}
+            //if ((memoryProperties.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) != 0) {
+            //    ss << " HOST_CACHED";
+            //}
+            //if ((memoryProperties.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT) != 0) {
+            //    ss << " LAZILY_ALLOCATED";
+            //}
+            //if ((memoryProperties.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_PROTECTED_BIT) != 0) {
+            //    ss << " PROTECTED_BIT";
+            //}
+            //std::cout << ss.str() << std::endl;
+
+            bool typeOk = (typeFilter & (1 << i)) != 0;
 
             // Problem: More than one memory property may be requested, so a simple bitwise 
             // AND != 0 check won't be suitable, and there may be more properties available than 
@@ -1434,50 +1456,117 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        Allocates the necessary memory for a vertex buffer.
-        ??be more specific??
+        Creates a VkBuffer of the requested type, then allocates memory for it with the requested 
+        memory usage and properties (specifying these allows the driver to optimize where it can).
     Creator:    John Cox, 12/2018
     ---------------------------------------------------------------------------------------------*/
-    void CreateVertexBuffer() {
+    void CreateBuffer(VkDeviceSize bufferSize, VkBufferUsageFlags bufferUsage, VkMemoryPropertyFlags memProperties, VkBuffer &buffer, VkDeviceMemory &bufferMemory) {
         VkBufferCreateInfo bufferCreateInfo{};
         bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        bufferCreateInfo.size = sizeof(gVertices[0]) * gVertices.size();
-        bufferCreateInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-        
+        bufferCreateInfo.size = bufferSize;
+        bufferCreateInfo.usage = bufferUsage;
+
         // only in use by one queue family (graphics queue)
         bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-        if (vkCreateBuffer(mLogicalDevice, &bufferCreateInfo, nullptr, &mVertexBuffer) != VK_SUCCESS) {
+        if (vkCreateBuffer(mLogicalDevice, &bufferCreateInfo, nullptr, &buffer) != VK_SUCCESS) {
             throw std::runtime_error("failed to create vertex buffer");
         }
 
-        VkMemoryRequirements memoryRequirements{};
-        vkGetBufferMemoryRequirements(mLogicalDevice, mVertexBuffer, &memoryRequirements);
-
-        // Note: The allocated memory is setting aside system memory (??and GPU memory??) that will be used as a read-write bridge between the CPU side of the program and GPU side. The function vkMapMemory(...) creates this bridge when called.
-        // HOST_VISIBLE: CPU side of the program has write access to the system memory.
-        // HOST_COHERENT: Changes in system memory will be uploaded the GPU memory as soon as the memory is written.
-        // Also Note: Alternative is to call vkFlushMappedMemoryRanges(...) followed by 
-        // vkInvalidateMappedMemoryRanges(...).
-        VkMemoryPropertyFlags desiredMemoryProperties =
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        VkMemoryRequirements memoryRequirements;
+        vkGetBufferMemoryRequirements(mLogicalDevice, buffer, &memoryRequirements);
 
         VkMemoryAllocateInfo memoryAllocateInfo{};
         memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         memoryAllocateInfo.allocationSize = memoryRequirements.size;
-        memoryAllocateInfo.memoryTypeIndex = FindMemoryType(memoryRequirements.memoryTypeBits, desiredMemoryProperties);
-        if (vkAllocateMemory(mLogicalDevice, &memoryAllocateInfo, nullptr, &mVertexBufferMemory) != VK_SUCCESS) {
+        memoryAllocateInfo.memoryTypeIndex = FindMemoryType(memoryRequirements.memoryTypeBits, memProperties);
+        if (vkAllocateMemory(mLogicalDevice, &memoryAllocateInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
             throw std::runtime_error("failed to allocate vertex buffer memory");
         }
-        vkBindBufferMemory(mLogicalDevice, mVertexBuffer, mVertexBufferMemory, 0);
+
+        uint32_t memoryOffset = 0;
+        vkBindBufferMemory(mLogicalDevice, buffer, bufferMemory, memoryOffset);
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        Copies from the non-device-local host-visible buffer to the device-local non-host-visible
+        buffer.
+    Creator:    John Cox, 12/2018
+    ---------------------------------------------------------------------------------------------*/
+    void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
+        VkCommandBufferAllocateInfo allocateInfo{};
+        allocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocateInfo.commandPool = mCommandPool;
+        allocateInfo.commandBufferCount = 1;
+
+        VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
+        vkAllocateCommandBuffers(mLogicalDevice, &allocateInfo, &commandBuffer);
+
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        
+        vkBeginCommandBuffer(commandBuffer, &beginInfo);
+
+        VkBufferCopy copyRegion{};
+        copyRegion.size = size;
+        uint32_t regionCount = 1;
+        vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, regionCount, &copyRegion);
+        vkEndCommandBuffer(commandBuffer);
+
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &commandBuffer;
+        uint32_t submitCount = 1;
+        vkQueueSubmit(mGraphicsQueue, submitCount, &submitInfo, VK_NULL_HANDLE);
+        vkQueueWaitIdle(mGraphicsQueue);
+
+        uint32_t commandBufferCount = 1;
+        vkFreeCommandBuffers(mLogicalDevice, mCommandPool, commandBufferCount, &commandBuffer);
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        Creates a non-device-local but host-visible and host-coherent buffer, meaning that the 
+        buffer will reside in system memory, though it will have a GPU-memory equivalent, and the 
+        program will have write access and that it will be immediately uploaded to the GPU upon 
+        writing. This has memory copy costs though because the memory has to be sent to the GPU. 
+        The vertex data is copied to this buffer once. 
+        
+        Then we create another buffer that is device local only and that is not host visible, 
+        meaning that the memory will reside on the GPU only and that the program will not write to 
+        it (that is, vkMapMemory(...) will blow up on us if we try to use it on this buffer's 
+        memory). We will then issue a command to copy the memory from the first buffer to the 
+        second, then dismiss the first buffer. The program will then run by accessing the 
+        device-local memory.
+    Creator:    John Cox, 12/2018
+    ---------------------------------------------------------------------------------------------*/
+    void CreateVertexBuffer() {
+        VkDeviceSize bufferSize = sizeof(gVertices[0]) * gVertices.size();
+        
+        VkBufferUsageFlags bufferUsage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        VkMemoryPropertyFlags memProperties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        VkBuffer stagingBuffer = VK_NULL_HANDLE;
+        VkDeviceMemory stagingBufferMemory = VK_NULL_HANDLE;
+        CreateBuffer(bufferSize, bufferUsage, memProperties, stagingBuffer, stagingBufferMemory);
 
         void *data = nullptr;
         VkDeviceSize offset = 0;
-        VkMemoryMapFlags flags = 0; // tutorial says that there are no flags for this (as of 2016)
-        vkMapMemory(mLogicalDevice, mVertexBufferMemory, offset, bufferCreateInfo.size, flags, &data);
-        memcpy(data, gVertices.data(), bufferCreateInfo.size);
-        vkUnmapMemory(mLogicalDevice, mVertexBufferMemory);
+        VkMemoryMapFlags flags = 0;
+        vkMapMemory(mLogicalDevice, stagingBufferMemory, offset, bufferSize, flags, &data);
+        memcpy(data, gVertices.data(), static_cast<size_t>(bufferSize));
+        vkUnmapMemory(mLogicalDevice, stagingBufferMemory);
+        
+        bufferUsage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+        memProperties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+        CreateBuffer(bufferSize, bufferUsage, memProperties, mVertexBuffer, mVertexBufferMemory);
+
+        CopyBuffer(stagingBuffer, mVertexBuffer, bufferSize);
+        vkDestroyBuffer(mLogicalDevice, stagingBuffer, nullptr);
+        vkFreeMemory(mLogicalDevice, stagingBufferMemory, nullptr);
     }
 
     /*---------------------------------------------------------------------------------------------
