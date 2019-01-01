@@ -212,6 +212,8 @@ private:
     VkDeviceMemory mVertexIndexBufferMemory;
     std::vector<VkBuffer> mUniformBuffers;
     std::vector<VkDeviceMemory> mUniformBuffersMemory;
+    VkDescriptorPool mDescriptorPool;
+    std::vector<VkDescriptorSet> mDescriptorSets;
 
     const std::vector<const char *> mRequiredDeviceExtensions{
         VK_KHR_SWAPCHAIN_EXTENSION_NAME
@@ -1244,7 +1246,10 @@ private:
         rasterizerCreateInfo.polygonMode = VK_POLYGON_MODE_FILL;    // or LINE or POINT
         rasterizerCreateInfo.lineWidth = 1.0f;  //>1.0f requires enabling "wideLines" GPU feature
         rasterizerCreateInfo.cullMode = VK_CULL_MODE_BACK_BIT;
-        rasterizerCreateInfo.frontFace = VK_FRONT_FACE_CLOCKWISE;
+        
+        // changed from `CLOCKWISE` because the GLM project matrix had to have its Y axis flipped 
+        // to bring it in line with Vulkan's NDCs
+        rasterizerCreateInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         rasterizerCreateInfo.depthBiasEnable = VK_FALSE;    //??what is "depth bias"??
 
         // multisampling is an antialiasing technique that combines fragment shader results of 
@@ -1440,7 +1445,8 @@ private:
 
             vkCmdBeginRenderPass(currentCommandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
             {
-                vkCmdBindPipeline(currentCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mGraphicsPipeline);
+                VkPipelineBindPoint graphicsBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+                vkCmdBindPipeline(currentCommandBuffer, graphicsBindPoint, mGraphicsPipeline);
 
                 VkBuffer vertexBuffers[] = { mVertexBuffer };
                 VkDeviceSize offsets[] = { 0 };
@@ -1450,6 +1456,19 @@ private:
 
                 VkDeviceSize offset = 0;
                 vkCmdBindIndexBuffer(currentCommandBuffer, mVertexIndexBuffer, offset, VK_INDEX_TYPE_UINT16);
+
+                uint32_t firstDescriptorSetIndex = 0;
+                uint32_t descriptorSetCount = 1;
+                uint32_t dynamicOffsetCount = 0;    // not considering dynamic descriptors now (1/1/2019)
+                vkCmdBindDescriptorSets(
+                    currentCommandBuffer, 
+                    graphicsBindPoint, 
+                    mPipelineLayout, 
+                    firstDescriptorSetIndex, 
+                    descriptorSetCount, 
+                    &mDescriptorSets.at(i), 
+                    dynamicOffsetCount, 
+                    nullptr);
 
                 uint32_t indexCount = static_cast<uint32_t>(gVertexIndices.size());
                 uint32_t instanceCount = 1;
@@ -1662,7 +1681,7 @@ private:
         create device-local memory that has to wait on a coherent staging buffer. We'll just use
         coherent memory (as soon as it is written to in system memory, it starts uploading to the
         GPU). The swap chain will give it a bit of time since it's busy with the current frame.
-    Creator:    John Cox, 01/2018
+    Creator:    John Cox, 01/2019
     ---------------------------------------------------------------------------------------------*/
     void CreateUniformBuffers() {
         VkDeviceSize bufferSize = sizeof(UniformBufferObject);
@@ -1674,6 +1693,82 @@ private:
         for (size_t i = 0; i < mSwapChainImages.size(); i++) {
             CreateBuffer(bufferSize, bufferUsage, memProperties, mUniformBuffers.at(i), mUniformBuffersMemory.at(i));
             // need to write new transforms every frame, so w'll do memory mapping later
+        }
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        One set of data descriptors (uniform buffer objects) per frame.
+    Creator:    John Cox, 01/2019
+    ---------------------------------------------------------------------------------------------*/
+    void CreateDescriptorPool() {
+        VkDescriptorPoolSize poolSize{};
+        poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        poolSize.descriptorCount = static_cast<uint32_t>(mSwapChainImages.size());
+
+        VkDescriptorPoolCreateInfo createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        createInfo.poolSizeCount = 1;
+        createInfo.pPoolSizes = &poolSize;
+
+        // Note: It is possible to create a "free descriptor set pool" via the 
+        // VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT flag, in which descriptor sets can 
+        // be freed and recreated at runtime. We won't be creating any descriptor sets on the fly, 
+        // so the maximum number of descriptor sets is the same as the number required.
+        createInfo.maxSets = static_cast<uint32_t>(mSwapChainImages.size());
+
+        if (vkCreateDescriptorPool(mLogicalDevice, &createInfo, nullptr, &mDescriptorPool) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create descriptor pool");
+        }
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        ??what are descripor sets??
+    Creator:    John Cox, 01/2019
+    ---------------------------------------------------------------------------------------------*/
+    void CreateDescriptorSets() {
+        // create duplicate descriptor set layouts (because Vulkan expects an array of them and 
+        // cannot be told that they are all one and the same)
+        std::vector<VkDescriptorSetLayout> layouts(mSwapChainImages.size(), mDescriptorSetLayout);
+        VkDescriptorSetAllocateInfo allocateInfo{};
+        allocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocateInfo.descriptorPool = mDescriptorPool;
+        allocateInfo.descriptorSetCount = static_cast<uint32_t>(mSwapChainImages.size());
+        allocateInfo.pSetLayouts = layouts.data();
+
+        // Note: This is an "allocate" function, not a "create" function, and it allocates from a 
+        // pool that was already created, so we don't need to explicitly free or destroy the 
+        // descriptor sets. They will be destroyed when the pool is.
+        mDescriptorSets.resize(mSwapChainImages.size());
+        if (vkAllocateDescriptorSets(mLogicalDevice, &allocateInfo, mDescriptorSets.data()) != VK_SUCCESS) {
+            throw std::runtime_error("failed to allocate descriptor sets");
+        }
+
+        for (size_t i = 0; i < mSwapChainImages.size(); i++) {
+            VkDescriptorBufferInfo bufferInfo{};
+            bufferInfo.buffer = mUniformBuffers.at(i);
+            bufferInfo.offset = 0;
+            bufferInfo.range = sizeof(UniformBufferObject);
+
+            VkWriteDescriptorSet descriptorWrite{};
+            descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrite.dstSet = mDescriptorSets.at(i);
+            descriptorWrite.dstBinding = 0;
+            
+            // not actually using a descriptor set array for each image, but the structure expects 
+            // an array, so we tell it to start at index 0
+            descriptorWrite.dstArrayElement = 0;
+            descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            descriptorWrite.descriptorCount = 1;
+            descriptorWrite.pBufferInfo = &bufferInfo;
+            descriptorWrite.pImageInfo = nullptr;
+            descriptorWrite.pTexelBufferView = nullptr;
+
+            uint32_t writeCount = 1;
+            uint32_t copyCount = 0; // ??why would you copy descriptors at runtime??
+            VkCopyDescriptorSet descriptorCopy{};
+            vkUpdateDescriptorSets(mLogicalDevice, writeCount, &descriptorWrite, copyCount, &descriptorCopy);
         }
     }
 
@@ -1770,6 +1865,9 @@ private:
         CreateCommandPool();
         CreateVertexBuffer();
         CreateVertexIndexBuffer();
+        CreateUniformBuffers();
+        CreateDescriptorPool();
+        CreateDescriptorSets();
         CreateCommandBuffers();
         CreateSyncObjects();
     }
@@ -1806,6 +1904,13 @@ private:
         // eye at (2,2,2), looking at (0,0,0), with Z axis as "up"
         ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
 
+        // Note: If the screen was resized and the swap chain had to be recreated, this 
+        // calculation will use the latest values, and so RecreateSwapChain(...) doesn't have to 
+        // handle that.
+        // Also Note: We could make it do that because the perspective projection (that is, the 
+        // camera->projection transform) is constant for a given screen size, but we aren't 
+        // because then we'd have to split the UBO population between this function and that 
+        // function, and that would be a bit of an encapsulation pain.
         float aspectRatio = mSwapChainExtent.width / static_cast<float>(mSwapChainExtent.height);
         float nearPlaneDist = 0.1f;
         float farPlaneDist = 10.0f;
@@ -1936,6 +2041,7 @@ private:
             vkDestroyBuffer(mLogicalDevice, mUniformBuffers.at(i), nullptr);
             vkFreeMemory(mLogicalDevice, mUniformBuffersMemory.at(i), nullptr);
         }
+        vkDestroyDescriptorPool(mLogicalDevice, mDescriptorPool, nullptr);
 
         vkDestroyBuffer(mLogicalDevice, mVertexBuffer, nullptr);
         vkFreeMemory(mLogicalDevice, mVertexBufferMemory, nullptr);
