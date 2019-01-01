@@ -1,7 +1,7 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
 
-// Note: Only the "out" location from the previous shader stage and the "in" location in this 
+// Note: Only the location of the "out" from the previous shader stage and "in" in this 
 // shader stage have to match. The name does not, unlike my prior experiences in Vulkan.
 layout(location = 0) in vec3 fragColorGoober;
 

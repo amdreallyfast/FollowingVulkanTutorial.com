@@ -1,8 +1,14 @@
 //#define GLFW_INCLUDE_VULKAN
 //#include <GLFW/glfw3.h>
 #include "vulkan_pch.h"
+
+#define GLM_FORCE_RADIANS
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
+#include <glm/mat4x4.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <chrono>
+
 #include <iostream>
 #include <sstream>      // for format-capable stringstream
 #include <iomanip>      // for std::setfill(...) and std::setw(...)
@@ -18,6 +24,11 @@
 #include <cerrno>       // for loading shader binaries
 
 
+/*-------------------------------------------------------------------------------------------------
+Description:
+    Makes vertex info lookup easy.
+Creator:    John Cox, 12/2018
+-------------------------------------------------------------------------------------------------*/
 struct Vertex {
     glm::vec2 pos;
     glm::vec3 color;
@@ -51,8 +62,12 @@ struct Vertex {
     }
 };
 
-// Note: In Vulkan, unlike OpenGL, Normalized Device Coordinate (NDC) (-1,-1) is the top left like 
-// Direct3D. In OpenGL, NDC (-1,-1) was the bottom left.
+/*-------------------------------------------------------------------------------------------------
+Description:
+    In Vulkan, unlike OpenGL, Normalized Device Coordinate (NDC) (-1,-1) is the top left like
+    Direct3D. In OpenGL, NDC (-1,-1) was the bottom left.
+Creator:    John Cox, 12/2018
+-------------------------------------------------------------------------------------------------*/
 const std::vector<Vertex> gVertexValues = {
     {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
     {{+0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
@@ -60,12 +75,30 @@ const std::vector<Vertex> gVertexValues = {
     {{-0.5f, +0.5f}, {1.0f, 1.0f, 1.0f}},
 };
 
-// Note: If we have fewer than 65535 (2^16-1) unique vertices, we can save space on indices by 
-// using 16bit unsigned integers. If we have more than that many unique vertices, then we will 
-// have to use 32bit unsigned integer indices.
+/*-------------------------------------------------------------------------------------------------
+Description:
+    If we have fewer than 65535 (2^16-1) unique vertices, we can save space on indices by using 
+    16bit unsigned integers. If we have more than that many unique vertices, then we will have to 
+    use 32bit unsigned integer indices.
+Creator:    John Cox, 12/2018
+-------------------------------------------------------------------------------------------------*/
 const std::vector<uint16_t> gVertexIndices = {
     0,1,2,
     2,3,0,
+};
+
+/*-------------------------------------------------------------------------------------------------
+Description:
+    Rather than specify three separate uniforms to bring the transform matrices into the shaders, 
+    load them all at one time.
+
+    ??why three separate matrices? is it just normal practice to separate them??
+Creator:    John Cox, 01/2019
+-------------------------------------------------------------------------------------------------*/
+struct UniformBufferObject {
+    glm::mat4 model;
+    glm::mat4 view;
+    glm::mat4 proj;
 };
 
 
@@ -163,6 +196,7 @@ private:
     std::vector<VkImageView> mSwapChainImageViews;
     std::vector<VkFramebuffer> mSwapChainFramebuffers;
     VkRenderPass mRenderPass;
+    VkDescriptorSetLayout mDescriptorSetLayout;
     VkPipelineLayout mPipelineLayout;    //??what is this??
     VkPipeline mGraphicsPipeline;
     VkCommandPool mCommandPool;
@@ -176,6 +210,8 @@ private:
     VkDeviceMemory mVertexBufferMemory;
     VkBuffer mVertexIndexBuffer;
     VkDeviceMemory mVertexIndexBufferMemory;
+    std::vector<VkBuffer> mUniformBuffers;
+    std::vector<VkDeviceMemory> mUniformBuffersMemory;
 
     const std::vector<const char *> mRequiredDeviceExtensions{
         VK_KHR_SWAPCHAIN_EXTENSION_NAME
@@ -907,6 +943,7 @@ private:
         CreateSwapChain();
         CreateImageViews();
         CreateRenderPass();
+        // Note: Not recreating the descriptor set layout because those are independent of image.
         CreateGraphicsPipeline();
         CreateFramebuffers();
         CreateCommandBuffers();
@@ -1055,6 +1092,37 @@ private:
 
         if (vkCreateRenderPass(mLogicalDevice, &renderPassCreateInfo, nullptr, &mRenderPass) != VK_SUCCESS) {
             throw std::runtime_error("failed to create render pass");
+        }
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        A "descriptor" is shorthand for the general programming term "data descriptor", which is a 
+        structure containing information that describes data. How helpful :/. In Vulkan, a 
+        descriptor is used to provide information to shaders in a pipeline about resources that 
+        are available (uniforms, texture samplers, etc.).
+
+        Note: It is possible for the shader's descriptor at a particular binding index (in this 
+        case we're using 0) to specify an array of descriptor objects, such as an array of uniform 
+        buffer objects, each with a a set of transforms, for every "bone" in a skeletal animation.
+        We're just using a single descriptor though, so our descriptor count is only 1;
+    Creator:    John Cox, 01/2019
+    ---------------------------------------------------------------------------------------------*/
+    void CreateDescriptorSetLayout() {
+        VkDescriptorSetLayoutBinding uboLayoutBinding{};
+        uboLayoutBinding.binding = 0;   // same binding location as in the shader that uses it
+        uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        uboLayoutBinding.descriptorCount = 1;
+        uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        uboLayoutBinding.pImmutableSamplers = nullptr;  // no textures yet at this time (1-1-2019)
+
+        VkDescriptorSetLayoutCreateInfo createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        createInfo.bindingCount = 1;
+        createInfo.pBindings = &uboLayoutBinding;
+
+        if (vkCreateDescriptorSetLayout(mLogicalDevice, &createInfo, nullptr, &mDescriptorSetLayout) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create descriptor set layout!");
         }
     }
 
@@ -1233,6 +1301,8 @@ private:
         // it blank
         VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo{};
         pipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        pipelineLayoutCreateInfo.setLayoutCount = 1;
+        pipelineLayoutCreateInfo.pSetLayouts = &mDescriptorSetLayout;   // MUST have been created prior to this
         if (vkCreatePipelineLayout(mLogicalDevice, &pipelineLayoutCreateInfo, nullptr, &mPipelineLayout) != VK_SUCCESS) {
             throw std::runtime_error("failed to create pipeline layout");
         }
@@ -1439,7 +1509,7 @@ private:
         vkGetPhysicalDeviceMemoryProperties(mPhysicalDevice, &memoryProperties);
         for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; i++) {
             //std::stringstream ss;
-            //ss << "memory type[" << i << "]:";
+            //ss << "memory type[" << i << "], heap index '" << memoryProperties.memoryTypes[i].heapIndex << "':";
             //if ((memoryProperties.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0) {
             //    ss << " DEVICE_LOCAL";
             //}
@@ -1550,7 +1620,7 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        To avoid duplicate vertex data, we will tellt he drawing commands to use vertex by index 
+        To avoid duplicate vertex data, we will tell the drawing commands to use vertex by index 
         instead of sequentially plucking out 3 vertices at a time from the vertex buffer. After 
         setting this up, the drawing will sequentially pluck out 3 indices at a time from the 
         index buffer, where it is cheaper to have duplicates (16bit duplicate indices much cheaper
@@ -1579,6 +1649,32 @@ private:
         CopyBuffer(stagingBuffer, mVertexIndexBuffer, bufferSize);
         vkDestroyBuffer(mLogicalDevice, stagingBuffer, nullptr);
         vkFreeMemory(mLogicalDevice, stagingBufferMemory, nullptr);
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        Creates a uniform buffer for every image in the swap chain so that we neither risk running 
+        over the current image-in-flight's uniforms nor have to wait for the image to finish 
+        before beginning the next one. With every image having it's own uniforms, we can go as 
+        fast as possible.
+
+        Note: We're going to have upload new transforms every frame, so it would be pointless to
+        create device-local memory that has to wait on a coherent staging buffer. We'll just use
+        coherent memory (as soon as it is written to in system memory, it starts uploading to the
+        GPU). The swap chain will give it a bit of time since it's busy with the current frame.
+    Creator:    John Cox, 01/2018
+    ---------------------------------------------------------------------------------------------*/
+    void CreateUniformBuffers() {
+        VkDeviceSize bufferSize = sizeof(UniformBufferObject);
+        VkBufferUsageFlags bufferUsage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+        VkMemoryPropertyFlags memProperties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        mUniformBuffers.resize(mSwapChainImages.size());
+        mUniformBuffersMemory.resize(mSwapChainImages.size());
+
+        for (size_t i = 0; i < mSwapChainImages.size(); i++) {
+            CreateBuffer(bufferSize, bufferUsage, memProperties, mUniformBuffers[i], mUniformBuffersMemory[i]);
+            // need to write new transforms every frame, so w'll do memory mapping later
+        }
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -1668,6 +1764,7 @@ private:
         CreateSwapChain();
         CreateImageViews();
         CreateRenderPass();
+        CreateDescriptorSetLayout();
         CreateGraphicsPipeline();
         CreateFramebuffers();
         CreateCommandPool();
@@ -1675,6 +1772,52 @@ private:
         CreateVertexIndexBuffer();
         CreateCommandBuffers();
         CreateSyncObjects();
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        Updates the uniform buffer for the current frame so that the vertex shader will have the 
+        correct transforms.
+
+        Note: GLM was designed for OpenGL ("GLM" = "GL Math"), in which the Y values in the
+        Normalized Device Coordinates (NDC) increased from bottom to top. This was chosen because 
+        cartesian coordinates in 2D graphs start at (0,0) and increase going right (+x) and up 
+        (+y). Early text editors were terminals (ex: Command Prompt in Windows), in which the 
+        first character was entered in the upper left, as we English speakers expect of our text, 
+        and early image processing (ASCII characters, not pixels) leveraged this text mechanism,
+        thereby declaring (0,0) to also be the upper left, and it never changed when image 
+        processing became pixel-based and there was no longer any technical reason to be the upper 
+        left. Direct3D followed image processing. And OpenGL didn't change, so as far as the rest 
+        of the image processing world is concerned, OpenGL (and therefore GLM) is upside down.
+
+        That's why we flip projection's Y.
+    Creator:    John Cox, 01/2019
+    ---------------------------------------------------------------------------------------------*/
+    void UpdateUniformBuffer(uint32_t swapChainImageIndex) {
+        static auto startTime = std::chrono::high_resolution_clock::now();
+        auto currentTime = std::chrono::high_resolution_clock::now();
+        float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+
+        UniformBufferObject ubo{};
+        
+        // starting with identity matrix, rotate with elapsed time around the Z axis
+        ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        
+        // eye at (2,2,2), looking at (0,0,0), with Z axis as "up"
+        ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+
+        float aspectRatio = mSwapChainExtent.width / static_cast<float>(mSwapChainExtent.height);
+        float nearPlaneDist = 0.1f;
+        float farPlaneDist = 10.0f;
+        ubo.proj = glm::perspective(glm::radians(45.0f), aspectRatio, nearPlaneDist, farPlaneDist);
+        ubo.proj[1][1] *= -1;   // flip the Y (don't know why this math works, but it does)
+
+        void *data = nullptr;
+        VkDeviceSize offset = 0;
+        VkMemoryMapFlags flags = 0;
+        vkMapMemory(mLogicalDevice, mUniformBuffersMemory[swapChainImageIndex], offset, sizeof(ubo), flags, &data);
+        memcpy(data, &ubo, sizeof(ubo));
+        vkUnmapMemory(mLogicalDevice, mUniformBuffersMemory[swapChainImageIndex]);
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -1712,6 +1855,8 @@ private:
         // only reset the fences once we're good to go (that is, have image and swap chain is not 
         // out of date)
         vkResetFences(mLogicalDevice, 1, pCurrentFrameFence);
+
+        UpdateUniformBuffer(imageIndex);
 
         // submit the command buffer for this image
         // Note: In short, this reads, "wait for 'image available semaphore', execute command 
@@ -1782,7 +1927,16 @@ private:
     ---------------------------------------------------------------------------------------------*/
     void Cleanup() {
         CleanupSwapChain();
-        
+
+        // TODO: change uniform buffer binding to, say, 7
+        // TODO: replace all vector/array accesses of [i] with .at(i)
+
+        vkDestroyDescriptorSetLayout(mLogicalDevice, mDescriptorSetLayout, nullptr);
+        for (size_t i = 0; i < mSwapChainImages.size(); i++) {
+            vkDestroyBuffer(mLogicalDevice, mUniformBuffers[i], nullptr);
+            vkFreeMemory(mLogicalDevice, mUniformBuffersMemory[i], nullptr);
+        }
+
         vkDestroyBuffer(mLogicalDevice, mVertexBuffer, nullptr);
         vkFreeMemory(mLogicalDevice, mVertexBufferMemory, nullptr);
         vkDestroyBuffer(mLogicalDevice, mVertexIndexBuffer, nullptr);
