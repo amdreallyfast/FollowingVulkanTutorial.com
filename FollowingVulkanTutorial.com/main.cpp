@@ -49,15 +49,15 @@ struct Vertex {
         std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
 
         // "pos" hijacks the color format enum to say "two 32bit floats"
-        attributeDescriptions[0].binding = VERTEX_BUFFER_BINDING_LOCATION;
-        attributeDescriptions[0].location = 0;
-        attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
-        attributeDescriptions[0].offset = offsetof(Vertex, pos);
+        attributeDescriptions.at(0).binding = VERTEX_BUFFER_BINDING_LOCATION;
+        attributeDescriptions.at(0).location = 0;
+        attributeDescriptions.at(0).format = VK_FORMAT_R32G32_SFLOAT;
+        attributeDescriptions.at(0).offset = offsetof(Vertex, pos);
 
-        attributeDescriptions[1].binding = VERTEX_BUFFER_BINDING_LOCATION;
-        attributeDescriptions[1].location = 1;
-        attributeDescriptions[1].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-        attributeDescriptions[1].offset = offsetof(Vertex, color);
+        attributeDescriptions.at(1).binding = VERTEX_BUFFER_BINDING_LOCATION;
+        attributeDescriptions.at(1).location = 1;
+        attributeDescriptions.at(1).format = VK_FORMAT_R32G32B32A32_SFLOAT;
+        attributeDescriptions.at(1).offset = offsetof(Vertex, color);
         return attributeDescriptions;
     }
 };
@@ -77,8 +77,8 @@ const std::vector<Vertex> gVertexValues = {
 
 /*-------------------------------------------------------------------------------------------------
 Description:
-    If we have fewer than 65535 (2^16-1) unique vertices, we can save space on indices by using 
-    16bit unsigned integers. If we have more than that many unique vertices, then we will have to 
+    If we have fewer than 65535 (2^16-1) unique vertices, we can save space on indices by using
+    16bit unsigned integers. If we have more than that many unique vertices, then we will have to
     use 32bit unsigned integer indices.
 Creator:    John Cox, 12/2018
 -------------------------------------------------------------------------------------------------*/
@@ -89,7 +89,7 @@ const std::vector<uint16_t> gVertexIndices = {
 
 /*-------------------------------------------------------------------------------------------------
 Description:
-    Rather than specify three separate uniforms to bring the transform matrices into the shaders, 
+    Rather than specify three separate uniforms to bring the transform matrices into the shaders,
     load them all at one time.
 
     ??why three separate matrices? is it just normal practice to separate them??
@@ -923,8 +923,8 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        During window resizing, image extent is no longer valid, and therefore the swap chain 
-        create info is no longer valid, and neither are the image views, or the render pass, or 
+        During window resizing, image extent is no longer valid, and therefore the swap chain
+        create info is no longer valid, and neither are the image views, or the render pass, or
         anything downstream that depended upon image extent.
     Creator:    John Cox, 12/2018
     ---------------------------------------------------------------------------------------------*/
@@ -937,7 +937,7 @@ private:
             glfwWaitEvents();
         }
         vkDeviceWaitIdle(mLogicalDevice);
-        
+
         CleanupSwapChain();
 
         CreateSwapChain();
@@ -1029,7 +1029,7 @@ private:
         should be handled throughout the rendering operations. All of this information is wrapped
         in a render pass object..."
 
-        Note: An "attachment" is one of the Vulkan synonyms for images. See my (mildly popular) 
+        Note: An "attachment" is one of the Vulkan synonyms for images. See my (mildly popular)
         post on Reddit that asked what it is.
         https://www.reddit.com/r/vulkan/comments/a27cid/what_is_an_attachment_in_the_render_passes/
 
@@ -1097,13 +1097,13 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        A "descriptor" is shorthand for the general programming term "data descriptor", which is a 
-        structure containing information that describes data. How helpful :/. In Vulkan, a 
-        descriptor is used to provide information to shaders in a pipeline about resources that 
+        A "descriptor" is shorthand for the general programming term "data descriptor", which is a
+        structure containing information that describes data. How helpful :/. In Vulkan, a
+        descriptor is used to provide information to shaders in a pipeline about resources that
         are available (uniforms, texture samplers, etc.).
 
-        Note: It is possible for the shader's descriptor at a particular binding index (in this 
-        case we're using 0) to specify an array of descriptor objects, such as an array of uniform 
+        Note: It is possible for the shader's descriptor at a particular binding index (in this
+        case we're using 0) to specify an array of descriptor objects, such as an array of uniform
         buffer objects, each with a a set of transforms, for every "bone" in a skeletal animation.
         We're just using a single descriptor though, so our descriptor count is only 1;
     Creator:    John Cox, 01/2019
@@ -1271,10 +1271,10 @@ private:
         //    }
         //    finalColor = finalColor & colorWriteMask;
         VkPipelineColorBlendAttachmentState colorBlendAttachmentState{};
-        colorBlendAttachmentState.colorWriteMask = 
-            VK_COLOR_COMPONENT_R_BIT | 
-            VK_COLOR_COMPONENT_G_BIT | 
-            VK_COLOR_COMPONENT_B_BIT | 
+        colorBlendAttachmentState.colorWriteMask =
+            VK_COLOR_COMPONENT_R_BIT |
+            VK_COLOR_COMPONENT_G_BIT |
+            VK_COLOR_COMPONENT_B_BIT |
             VK_COLOR_COMPONENT_A_BIT;
         colorBlendAttachmentState.blendEnable = VK_FALSE;
         //colorBlendAttachmentState.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;    //??
@@ -1344,7 +1344,7 @@ private:
         mSwapChainFramebuffers.resize(mSwapChainImageViews.size());
         for (size_t i = 0; i < mSwapChainImageViews.size(); i++) {
             VkImageView attachments[] = {
-                mSwapChainImageViews[i]
+                mSwapChainImageViews.at(i)
             };
             VkFramebufferCreateInfo frameBufferCreateInfo{};
             frameBufferCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -1355,7 +1355,7 @@ private:
             frameBufferCreateInfo.height = mSwapChainExtent.height;
             frameBufferCreateInfo.layers = 1;
 
-            if (vkCreateFramebuffer(mLogicalDevice, &frameBufferCreateInfo, nullptr, &mSwapChainFramebuffers[i]) != VK_SUCCESS) {
+            if (vkCreateFramebuffer(mLogicalDevice, &frameBufferCreateInfo, nullptr, &mSwapChainFramebuffers.at(i)) != VK_SUCCESS) {
                 throw std::runtime_error("failed to create framebuffer");
             }
         }
@@ -1417,7 +1417,7 @@ private:
 
         for (size_t i = 0; i < mCommandBuffers.size(); i++) {
             // type is actually a pointer, so non-reference assignment is ok
-            auto currentCommandBuffer = mCommandBuffers[i];
+            auto currentCommandBuffer = mCommandBuffers.at(i);
 
             VkCommandBufferBeginInfo commandBufferBeginInfo{};
             commandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -1429,7 +1429,7 @@ private:
             VkRenderPassBeginInfo renderPassBeginInfo{};
             renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
             renderPassBeginInfo.renderPass = mRenderPass;
-            renderPassBeginInfo.framebuffer = mSwapChainFramebuffers[i];
+            renderPassBeginInfo.framebuffer = mSwapChainFramebuffers.at(i);
             renderPassBeginInfo.renderArea.offset = { 0, 0 };
             renderPassBeginInfo.renderArea.extent = mSwapChainExtent;
 
@@ -1477,7 +1477,7 @@ private:
         mSemaphoresImageAvailable.resize(MAX_FRAMES_IN_FLIGHT);
         mSemaphoresRenderFinished.resize(MAX_FRAMES_IN_FLIGHT);
         mInFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
-        
+
         VkSemaphoreCreateInfo semaphoreCreateInfo{};
         semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
@@ -1486,9 +1486,9 @@ private:
         fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-            if (vkCreateSemaphore(mLogicalDevice, &semaphoreCreateInfo, nullptr, &mSemaphoresImageAvailable[i]) != VK_SUCCESS ||
-                vkCreateSemaphore(mLogicalDevice, &semaphoreCreateInfo, nullptr, &mSemaphoresRenderFinished[i]) != VK_SUCCESS ||
-                vkCreateFence(mLogicalDevice, &fenceCreateInfo, nullptr, &mInFlightFences[i]) != VK_SUCCESS) {
+            if (vkCreateSemaphore(mLogicalDevice, &semaphoreCreateInfo, nullptr, &mSemaphoresImageAvailable.at(i)) != VK_SUCCESS ||
+                vkCreateSemaphore(mLogicalDevice, &semaphoreCreateInfo, nullptr, &mSemaphoresRenderFinished.at(i)) != VK_SUCCESS ||
+                vkCreateFence(mLogicalDevice, &fenceCreateInfo, nullptr, &mInFlightFences.at(i)) != VK_SUCCESS) {
                 throw std::runtime_error("failed to create synchronization objects for a frame");
             }
         }
@@ -1496,9 +1496,9 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        Not all memory is created equal. Some is only available on the GPU ("device local"), some 
-        is visible to the host (the program), some is coherent (immediately copied to a duplicate 
-        chunk of GPU memory upon writing, though this has system-memory->GPU-memory transfer 
+        Not all memory is created equal. Some is only available on the GPU ("device local"), some
+        is visible to the host (the program), some is coherent (immediately copied to a duplicate
+        chunk of GPU memory upon writing, though this has system-memory->GPU-memory transfer
         costs), etc.
 
         ??why are there a bunch of property-less pieces of memory??
@@ -1546,7 +1546,7 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        Creates a VkBuffer of the requested type, then allocates memory for it with the requested 
+        Creates a VkBuffer of the requested type, then allocates memory for it with the requested
         memory usage and properties (specifying these allows the driver to optimize where it can).
     Creator:    John Cox, 12/2018
     ---------------------------------------------------------------------------------------------*/
@@ -1597,7 +1597,7 @@ private:
         VkCommandBufferBeginInfo beginInfo{};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        
+
         vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
         VkBufferCopy copyRegion{};
@@ -1620,9 +1620,9 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        To avoid duplicate vertex data, we will tell the drawing commands to use vertex by index 
-        instead of sequentially plucking out 3 vertices at a time from the vertex buffer. After 
-        setting this up, the drawing will sequentially pluck out 3 indices at a time from the 
+        To avoid duplicate vertex data, we will tell the drawing commands to use vertex by index
+        instead of sequentially plucking out 3 vertices at a time from the vertex buffer. After
+        setting this up, the drawing will sequentially pluck out 3 indices at a time from the
         index buffer, where it is cheaper to have duplicates (16bit duplicate indices much cheaper
         than duplicating an entire 2x 32bit position float + 3x 32bit color float vertex).
     Creator:    John Cox, 12/2018
@@ -1653,9 +1653,9 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        Creates a uniform buffer for every image in the swap chain so that we neither risk running 
-        over the current image-in-flight's uniforms nor have to wait for the image to finish 
-        before beginning the next one. With every image having it's own uniforms, we can go as 
+        Creates a uniform buffer for every image in the swap chain so that we neither risk running
+        over the current image-in-flight's uniforms nor have to wait for the image to finish
+        before beginning the next one. With every image having it's own uniforms, we can go as
         fast as possible.
 
         Note: We're going to have upload new transforms every frame, so it would be pointless to
@@ -1672,30 +1672,30 @@ private:
         mUniformBuffersMemory.resize(mSwapChainImages.size());
 
         for (size_t i = 0; i < mSwapChainImages.size(); i++) {
-            CreateBuffer(bufferSize, bufferUsage, memProperties, mUniformBuffers[i], mUniformBuffersMemory[i]);
+            CreateBuffer(bufferSize, bufferUsage, memProperties, mUniformBuffers.at(i), mUniformBuffersMemory.at(i));
             // need to write new transforms every frame, so w'll do memory mapping later
         }
     }
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        Creates a non-device-local but host-visible and host-coherent buffer, meaning that the 
-        buffer will reside in system memory, though it will have a GPU-memory equivalent, and the 
-        program will have write access and that it will be immediately uploaded to the GPU upon 
-        writing. This has memory copy costs though because the memory has to be sent to the GPU. 
-        The vertex data is copied to this buffer once. 
-        
-        Then we create another buffer that is device local only and that is not host visible, 
-        meaning that the memory will reside on the GPU only and that the program will not write to 
-        it (that is, vkMapMemory(...) will blow up on us if we try to use it on this buffer's 
-        memory). We will then issue a command to copy the memory from the first buffer to the 
-        second, then dismiss the first buffer. The program will then run by accessing the 
+        Creates a non-device-local but host-visible and host-coherent buffer, meaning that the
+        buffer will reside in system memory, though it will have a GPU-memory equivalent, and the
+        program will have write access and that it will be immediately uploaded to the GPU upon
+        writing. This has memory copy costs though because the memory has to be sent to the GPU.
+        The vertex data is copied to this buffer once.
+
+        Then we create another buffer that is device local only and that is not host visible,
+        meaning that the memory will reside on the GPU only and that the program will not write to
+        it (that is, vkMapMemory(...) will blow up on us if we try to use it on this buffer's
+        memory). We will then issue a command to copy the memory from the first buffer to the
+        second, then dismiss the first buffer. The program will then run by accessing the
         device-local memory.
     Creator:    John Cox, 12/2018
     ---------------------------------------------------------------------------------------------*/
     void CreateVertexBuffer() {
         VkDeviceSize bufferSize = sizeof(gVertexValues[0]) * gVertexValues.size();
-        
+
         VkBufferUsageFlags bufferUsage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
         VkMemoryPropertyFlags memProperties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
         VkBuffer stagingBuffer = VK_NULL_HANDLE;
@@ -1708,7 +1708,7 @@ private:
         vkMapMemory(mLogicalDevice, stagingBufferMemory, offset, bufferSize, flags, &data);
         memcpy(data, gVertexValues.data(), static_cast<size_t>(bufferSize));
         vkUnmapMemory(mLogicalDevice, stagingBufferMemory);
-        
+
         bufferUsage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
         memProperties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
         CreateBuffer(bufferSize, bufferUsage, memProperties, mVertexBuffer, mVertexBufferMemory);
@@ -1722,9 +1722,9 @@ private:
     Description:
         Called when GLFW detects a change in the size of the renderable area.
 
-        Note: Created static because GLFW callback registration function was built with C-style 
-        function pointers in mind and therefore does not know how to call a member function with 
-        the correct "this" pointer. 
+        Note: Created static because GLFW callback registration function was built with C-style
+        function pointers in mind and therefore does not know how to call a member function with
+        the correct "this" pointer.
     Creator:    John Cox, 12/2018
     ---------------------------------------------------------------------------------------------*/
     static void FramebufferResizeCallback(GLFWwindow *window, int width, int height) {
@@ -1776,18 +1776,18 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        Updates the uniform buffer for the current frame so that the vertex shader will have the 
+        Updates the uniform buffer for the current frame so that the vertex shader will have the
         correct transforms.
 
         Note: GLM was designed for OpenGL ("GLM" = "GL Math"), in which the Y values in the
-        Normalized Device Coordinates (NDC) increased from bottom to top. This was chosen because 
-        cartesian coordinates in 2D graphs start at (0,0) and increase going right (+x) and up 
-        (+y). Early text editors were terminals (ex: Command Prompt in Windows), in which the 
-        first character was entered in the upper left, as we English speakers expect of our text, 
+        Normalized Device Coordinates (NDC) increased from bottom to top. This was chosen because
+        cartesian coordinates in 2D graphs start at (0,0) and increase going right (+x) and up
+        (+y). Early text editors were terminals (ex: Command Prompt in Windows), in which the
+        first character was entered in the upper left, as we English speakers expect of our text,
         and early image processing (ASCII characters, not pixels) leveraged this text mechanism,
-        thereby declaring (0,0) to also be the upper left, and it never changed when image 
-        processing became pixel-based and there was no longer any technical reason to be the upper 
-        left. Direct3D followed image processing. And OpenGL didn't change, so as far as the rest 
+        thereby declaring (0,0) to also be the upper left, and it never changed when image
+        processing became pixel-based and there was no longer any technical reason to be the upper
+        left. Direct3D followed image processing. And OpenGL didn't change, so as far as the rest
         of the image processing world is concerned, OpenGL (and therefore GLM) is upside down.
 
         That's why we flip projection's Y.
@@ -1799,10 +1799,10 @@ private:
         float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
         UniformBufferObject ubo{};
-        
+
         // starting with identity matrix, rotate with elapsed time around the Z axis
         ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-        
+
         // eye at (2,2,2), looking at (0,0,0), with Z axis as "up"
         ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
 
@@ -1815,9 +1815,9 @@ private:
         void *data = nullptr;
         VkDeviceSize offset = 0;
         VkMemoryMapFlags flags = 0;
-        vkMapMemory(mLogicalDevice, mUniformBuffersMemory[swapChainImageIndex], offset, sizeof(ubo), flags, &data);
+        vkMapMemory(mLogicalDevice, mUniformBuffersMemory.at(swapChainImageIndex), offset, sizeof(ubo), flags, &data);
         memcpy(data, &ubo, sizeof(ubo));
-        vkUnmapMemory(mLogicalDevice, mUniformBuffersMemory[swapChainImageIndex]);
+        vkUnmapMemory(mLogicalDevice, mUniformBuffersMemory.at(swapChainImageIndex));
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -1836,14 +1836,14 @@ private:
     void DrawFrame() {
         // don't submit another queue of graphics commands until 
         size_t inflightFrameIndex = mCurrentFrame % MAX_FRAMES_IN_FLIGHT;
-        VkFence *pCurrentFrameFence = &mInFlightFences[inflightFrameIndex];
+        VkFence *pCurrentFrameFence = &mInFlightFences.at(inflightFrameIndex);
         VkBool32 waitAllFences = VK_TRUE; // we only wait on one fence, so "wait all" irrelevant
         uint64_t timeout_ns = std::numeric_limits<uint64_t>::max();
         vkWaitForFences(mLogicalDevice, 1, pCurrentFrameFence, waitAllFences, timeout_ns);
 
         uint32_t imageIndex = 0;
         VkFence nullFence = VK_NULL_HANDLE;
-        VkResult result = vkAcquireNextImageKHR(mLogicalDevice, mSwapChain, timeout_ns, mSemaphoresImageAvailable[inflightFrameIndex], nullFence, &imageIndex);
+        VkResult result = vkAcquireNextImageKHR(mLogicalDevice, mSwapChain, timeout_ns, mSemaphoresImageAvailable.at(inflightFrameIndex), nullFence, &imageIndex);
         if (result == VK_ERROR_OUT_OF_DATE_KHR) {
             RecreateSwapChain();
             return;
@@ -1862,8 +1862,8 @@ private:
         // Note: In short, this reads, "wait for 'image available semaphore', execute command 
         // buffer on the render passes' color attachment, then raise the 'render finished' 
         // semaphore".
-        VkSemaphore waitSemaphores[] = { mSemaphoresImageAvailable[inflightFrameIndex] };
-        VkSemaphore signalSemaphores[] = { mSemaphoresRenderFinished[inflightFrameIndex] };
+        VkSemaphore waitSemaphores[] = { mSemaphoresImageAvailable.at(inflightFrameIndex) };
+        VkSemaphore signalSemaphores[] = { mSemaphoresRenderFinished.at(inflightFrameIndex) };
         VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -1871,7 +1871,7 @@ private:
         submitInfo.pWaitSemaphores = waitSemaphores;
         submitInfo.pWaitDstStageMask = waitStages;
         submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &mCommandBuffers[imageIndex];
+        submitInfo.pCommandBuffers = &mCommandBuffers.at(imageIndex);
         submitInfo.signalSemaphoreCount = 1;
         submitInfo.pSignalSemaphores = signalSemaphores;
 
@@ -1933,8 +1933,8 @@ private:
 
         vkDestroyDescriptorSetLayout(mLogicalDevice, mDescriptorSetLayout, nullptr);
         for (size_t i = 0; i < mSwapChainImages.size(); i++) {
-            vkDestroyBuffer(mLogicalDevice, mUniformBuffers[i], nullptr);
-            vkFreeMemory(mLogicalDevice, mUniformBuffersMemory[i], nullptr);
+            vkDestroyBuffer(mLogicalDevice, mUniformBuffers.at(i), nullptr);
+            vkFreeMemory(mLogicalDevice, mUniformBuffersMemory.at(i), nullptr);
         }
 
         vkDestroyBuffer(mLogicalDevice, mVertexBuffer, nullptr);
@@ -1943,9 +1943,9 @@ private:
         vkFreeMemory(mLogicalDevice, mVertexIndexBufferMemory, nullptr);
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-            vkDestroySemaphore(mLogicalDevice, mSemaphoresImageAvailable[i], nullptr);
-            vkDestroySemaphore(mLogicalDevice, mSemaphoresRenderFinished[i], nullptr);
-            vkDestroyFence(mLogicalDevice, mInFlightFences[i], nullptr);
+            vkDestroySemaphore(mLogicalDevice, mSemaphoresImageAvailable.at(i), nullptr);
+            vkDestroySemaphore(mLogicalDevice, mSemaphoresRenderFinished.at(i), nullptr);
+            vkDestroyFence(mLogicalDevice, mInFlightFences.at(i), nullptr);
         }
         vkDestroyCommandPool(mLogicalDevice, mCommandPool, nullptr);
         vkDestroyDevice(mLogicalDevice, nullptr);

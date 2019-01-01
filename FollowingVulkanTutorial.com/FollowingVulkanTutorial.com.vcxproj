@@ -173,6 +173,9 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="cpp.hint" />
+    <None Include="shaders\compile_shaders.bat" />
+    <None Include="shaders\triangle.frag" />
+    <None Include="shaders\triangle.vert" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="resource_docs.txt" />
