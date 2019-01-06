@@ -217,6 +217,9 @@ private:
     std::vector<VkDeviceMemory> mUniformBuffersMemory;
     VkDescriptorPool mDescriptorPool;
     std::vector<VkDescriptorSet> mDescriptorSets;
+    VkImage mTextureImage;
+    VkDeviceMemory mTextureImageMemory;
+
 
     const std::vector<const char *> mRequiredDeviceExtensions{
         VK_KHR_SWAPCHAIN_EXTENSION_NAME
@@ -1403,8 +1406,212 @@ private:
         ??
     Creator:    John Cox, 01/2019
     ---------------------------------------------------------------------------------------------*/
-    void CreateTextureImage() {
+    void CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) {
+        VkCommandBuffer commandBuffer = BeginSingleUseCommandBuffer();
 
+        // need to specify which parts of the buffer will be copied to this image
+        VkBufferImageCopy region{};
+        
+        // offset where pixels start
+        region.bufferOffset = 0;
+        
+        // 0 for both indicates close packing (that is, no padding between rows)
+        region.bufferRowLength = 0;
+        region.bufferImageHeight = 0;
+
+        // indicates the parts of the image that we want to copy
+        // Note: If we really wanted to, this allows us to copy one particular mipmap level.
+        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        region.imageSubresource.mipLevel = 0;
+        region.imageSubresource.baseArrayLayer = 0;
+        region.imageSubresource.layerCount = 1;
+        region.imageOffset = { 0,0,0 };
+        region.imageExtent = { width,height,1 };
+
+        // TODO: ??make a parameter instead of hard-coding? is the assumption ok??
+        VkImageLayout currentImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        vkCmdCopyBufferToImage(commandBuffer, buffer, image, currentImageLayout, 1, &region);
+
+        SubmitAndEndSingleUseCommandBuffer(commandBuffer);
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        Changes the usage of the texture image from ?? to ??.
+
+        Note: We could use VK_IMAGE_LAYOUT_UNDEFINED if we didn't mind the image potentially 
+        getting clobbered (implementation defined whether it does this or not), but we already 
+        used the image as a copy destination and copied the JPEG's pixels to it, so we definitely 
+        don't want it clobbered and therefore specify the existing layout.
+    Creator:    John Cox, 01/2019
+    ---------------------------------------------------------------------------------------------*/
+    void TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout currentLayout, VkImageLayout newLayout) {
+        VkCommandBuffer commandBuffer = BeginSingleUseCommandBuffer();
+
+        VkImageMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrier.oldLayout = currentLayout;
+        barrier.newLayout = newLayout;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;  // exclusive to graphics queue right now (1/1/2019)
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = image;
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;    // ??color "aspect"??
+        barrier.subresourceRange.baseMipLevel = 0;      // no mipmapping right now (1/1/2019)
+        barrier.subresourceRange.levelCount = 1;
+        barrier.subresourceRange.baseArrayLayer = 0;    // not an array right now (1/1/2019)
+        barrier.subresourceRange.layerCount = 1;
+        barrier.srcAccessMask = 0;  // TODO
+        barrier.dstAccessMask = 0;  // TODO
+        
+        VkPipelineStageFlags srcStageMask = 0;  // TODO
+        VkPipelineStageFlags dstStageMask = 0;  // TODO
+        if (currentLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+            barrier.srcAccessMask = 0;
+            barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+            dstStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        }
+        else if (currentLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+            barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+            dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        }
+        else {
+            throw std::invalid_argument("unsupported layout transition");
+        }
+
+        VkDependencyFlags dependencies = 0; // VkDependencyFlagBits::VK_DEPENDENCY_BY_REGION_BIT (supposedly, the reading stage is allowed to do so from writes that have already finished, even though the whole write has not...nifty)
+        uint32_t memoryBarrierCount = 0;
+        VkMemoryBarrier *pMemoryBarrier = nullptr;
+        uint32_t bufferMemoryBarrierCount = 0;
+        VkBufferMemoryBarrier *pBufferMemoryBarrier = nullptr;
+        vkCmdPipelineBarrier(commandBuffer,
+            srcStageMask,
+            dstStageMask,
+            dependencies,
+            memoryBarrierCount,
+            pMemoryBarrier,
+            bufferMemoryBarrierCount,
+            pBufferMemoryBarrier,
+            1,
+            &barrier);
+
+        SubmitAndEndSingleUseCommandBuffer(commandBuffer);
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        Creates an image that is not part of the swap chain.
+        
+        Note: When creating the swap chain, image extent was specified and applied to every image 
+        that it created. We are now creating a standalone image that is the size of the texture. 
+        If we have lots of textures, then we will have lots of standalone images, and many will 
+        not share the same extent. Thus we need to specify the extent for each and every texture 
+        image.
+    Creator:    John Cox, 01/2019
+    ---------------------------------------------------------------------------------------------*/
+    void CreateImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags memProperties, VkImage &image, VkDeviceMemory &imageMemory) {
+        VkImageCreateInfo imageCreateInfo{};
+        imageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        imageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
+        imageCreateInfo.extent.width = static_cast<uint32_t>(width);
+        imageCreateInfo.extent.height = static_cast<uint32_t>(height);
+        imageCreateInfo.extent.depth = 1;   //??what happens at 0??
+        imageCreateInfo.mipLevels = 1;      // no mipmapping right now (1/6/2019)
+        imageCreateInfo.arrayLayers = 1;
+        imageCreateInfo.format = format;
+        imageCreateInfo.tiling = tiling;
+        imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        imageCreateInfo.usage = usage;
+        imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        imageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+        if (vkCreateImage(mLogicalDevice, &imageCreateInfo, nullptr, &mTextureImage) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create image for texture");
+        }
+
+        // now allocate memory for the image
+        VkMemoryRequirements memRequirements{};
+        vkGetImageMemoryRequirements(mLogicalDevice, mTextureImage, &memRequirements);
+
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memRequirements.size;
+        allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, memProperties);
+        if (vkAllocateMemory(mLogicalDevice, &allocInfo, nullptr, &mTextureImageMemory) != VK_SUCCESS) {
+            throw std::runtime_error("failed to allocate image memory");
+        }
+
+        VkDeviceSize offset = 0;
+        vkBindImageMemory(mLogicalDevice, mTextureImage, mTextureImageMemory, offset);
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        Loads a JPEG into a buffer of pixel data, creates a VkImage for it and allocates memory 
+        for it, copies the pixels into it, then transitions the image for optimal use by the 
+        shaders.
+
+        Stock image:
+        https://pixabay.com/en/statue-sculpture-figure-1275469/
+    Creator:    John Cox, 01/2019
+    ---------------------------------------------------------------------------------------------*/
+    void CreateTextureImage() {
+        int tWidth = 0;
+        int tHeight = 0;
+        int numActualChannels = 0;
+        int requestedComposition = STBI_rgb_alpha;
+        stbi_uc *pixels = stbi_load("textures/statue.jpg", &tWidth, &tHeight, &numActualChannels, STBI_rgb_alpha);
+
+        // Note: We requested the image with RGBA, so even if it doesn't actually have 4 channels, 
+        // we'll get a 4-channel image (alpha expected to be 0), so we should allocate space for 
+        // that.
+        VkDeviceSize imageSize = tWidth * tHeight * 4;
+
+        if (pixels == nullptr) {
+            throw std::runtime_error("failed to load texture image");
+        }
+
+        // we want this image to live in GPU memory for fast access, but as with the vertex 
+        // buffer, DEVICE_LOCAL memory is not host coherent, so we'll have to make a staging 
+        // buffer for it
+        VkBufferUsageFlags bufferUsage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        VkMemoryPropertyFlags memProperties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        VkBuffer stagingBuffer = VK_NULL_HANDLE;
+        VkDeviceMemory stagingBufferMemory = VK_NULL_HANDLE;
+        CreateBuffer(imageSize, bufferUsage, memProperties, stagingBuffer, stagingBufferMemory);
+
+        void *data = nullptr;
+        VkDeviceSize zeroOffset = 0;
+        VkMemoryMapFlags flags = 0;
+        vkMapMemory(mLogicalDevice, stagingBufferMemory, zeroOffset, imageSize, flags, &data);
+        memcpy(data, pixels, static_cast<size_t>(imageSize));
+        vkUnmapMemory(mLogicalDevice, stagingBufferMemory);
+        stbi_image_free(pixels);
+
+        VkFormat imageFormat = VK_FORMAT_R8G8B8A8_UNORM;      //??what happens if it isn't? is this just JPEG??
+        VkImageTiling imageTiling = VK_IMAGE_TILING_OPTIMAL;
+        VkImageUsageFlags imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        memProperties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+        CreateImage(tWidth, tHeight,
+            imageFormat,
+            imageTiling,
+            imageUsage,
+            memProperties, 
+            mTextureImage,
+            mTextureImageMemory);
+
+        VkImageLayout currentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        VkImageLayout dstLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        TransitionImageLayout(mTextureImage, imageFormat, currentLayout, dstLayout);
+        CopyBufferToImage(stagingBuffer, mTextureImage, static_cast<uint32_t>(tWidth), static_cast<uint32_t>(tHeight));
+
+        currentLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        dstLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        TransitionImageLayout(mTextureImage, imageFormat, currentLayout, dstLayout);
+
+        vkDestroyBuffer(mLogicalDevice, stagingBuffer, nullptr);
+        vkFreeMemory(mLogicalDevice, stagingBufferMemory, nullptr);
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -1498,6 +1705,24 @@ private:
     Creator:    John Cox, 12/2018
     ---------------------------------------------------------------------------------------------*/
     void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
+        VkCommandBuffer commandBuffer = BeginSingleUseCommandBuffer();
+
+        VkBufferCopy copyRegion{};
+        copyRegion.size = size;
+        uint32_t regionCount = 1;
+        vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, regionCount, &copyRegion);
+
+        SubmitAndEndSingleUseCommandBuffer(commandBuffer);
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        With not only vertex buffers needing copying but also texture images needing initial 
+        processing, this common code for the beginning of a one-time command buffer was broken 
+        into two dedicated functions to prevent copying.
+    Creator:    John Cox, 01/2019
+    ---------------------------------------------------------------------------------------------*/
+    VkCommandBuffer BeginSingleUseCommandBuffer() {
         VkCommandBufferAllocateInfo allocateInfo{};
         allocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         allocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
@@ -1512,19 +1737,25 @@ private:
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
         vkBeginCommandBuffer(commandBuffer, &beginInfo);
+        return commandBuffer;
+    }
 
-        VkBufferCopy copyRegion{};
-        copyRegion.size = size;
-        uint32_t regionCount = 1;
-        vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, regionCount, &copyRegion);
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        This is the second half of the common code used in executing a one-time command buffer.
+    Creator:    John Cox, 01/2019
+    ---------------------------------------------------------------------------------------------*/
+    void SubmitAndEndSingleUseCommandBuffer(VkCommandBuffer commandBuffer) {
         vkEndCommandBuffer(commandBuffer);
 
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submitInfo.commandBufferCount = 1;
         submitInfo.pCommandBuffers = &commandBuffer;
+
         uint32_t submitCount = 1;
-        vkQueueSubmit(mGraphicsQueue, submitCount, &submitInfo, VK_NULL_HANDLE);
+        VkFence nullFence = VK_NULL_HANDLE;
+        vkQueueSubmit(mGraphicsQueue, submitCount, &submitInfo, nullFence);
         vkQueueWaitIdle(mGraphicsQueue);
 
         uint32_t commandBufferCount = 1;
@@ -2055,6 +2286,8 @@ private:
 
         // TODO: change uniform buffer binding to, say, 7
         // TODO: replace all vector/array accesses of [i] with .at(i)
+        vkDestroyImage(mLogicalDevice, mTextureImage, nullptr);
+        vkFreeMemory(mLogicalDevice, mTextureImageMemory, nullptr);
 
         vkDestroyDescriptorSetLayout(mLogicalDevice, mDescriptorSetLayout, nullptr);
         for (size_t i = 0; i < mSwapChainImages.size(); i++) {

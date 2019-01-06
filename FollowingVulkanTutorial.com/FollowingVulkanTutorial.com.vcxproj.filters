@@ -33,11 +33,11 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="cpp.hint" />
-    <None Include="shaders\compile_shaders.bat">
-      <Filter>Source Files</Filter>
-    </None>
     <None Include="shaders\triangle.frag" />
     <None Include="shaders\triangle.vert" />
+    <None Include="shaders\compile_shaders.cmd">
+      <Filter>Source Files</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Text Include="resource_docs.txt" />
