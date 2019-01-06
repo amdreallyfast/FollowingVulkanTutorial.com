@@ -2,6 +2,9 @@
 //#include <GLFW/glfw3.h>
 #include "vulkan_pch.h"
 
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+
 #define GLM_FORCE_RADIANS
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
@@ -1000,31 +1003,6 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        Given a file path to a compiled shader binary, reads the entire file and constructs a
-        VkShaderModule object out of the data, then returns it.
-
-        Note: Thge shader module requires explicit destruction since it was created with a
-        "vkCreate*(...)" call.
-    Creator:    John Cox, 11/2018
-    ---------------------------------------------------------------------------------------------*/
-    VkShaderModule CreateShaderModule(const std::string &filePath) {
-        auto shader_binary = ReadFileIntoString(filePath);
-
-        VkShaderModuleCreateInfo createInfo{};
-        createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-        createInfo.codeSize = shader_binary.size();
-        createInfo.pCode = reinterpret_cast<const uint32_t*>(shader_binary.data());
-
-        VkShaderModule shaderModule;
-        if (vkCreateShaderModule(mLogicalDevice, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create shader module");
-        }
-
-        return shaderModule;
-    }
-
-    /*---------------------------------------------------------------------------------------------
-    Description:
         "Before we can finish creating the pipeline, we need to tell Vulkan about the framebuffer
         attachments that will be used while rendering. We need to specify how many color and depth
         buffers there will be, how many samples to use for each of them and how their contents
@@ -1126,6 +1104,31 @@ private:
         if (vkCreateDescriptorSetLayout(mLogicalDevice, &createInfo, nullptr, &mDescriptorSetLayout) != VK_SUCCESS) {
             throw std::runtime_error("failed to create descriptor set layout!");
         }
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        Given a file path to a compiled shader binary, reads the entire file and constructs a
+        VkShaderModule object out of the data, then returns it.
+
+        Note: Thge shader module requires explicit destruction since it was created with a
+        "vkCreate*(...)" call.
+    Creator:    John Cox, 11/2018
+    ---------------------------------------------------------------------------------------------*/
+    VkShaderModule CreateShaderModule(const std::string &filePath) {
+        auto shader_binary = ReadFileIntoString(filePath);
+
+        VkShaderModuleCreateInfo createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        createInfo.codeSize = shader_binary.size();
+        createInfo.pCode = reinterpret_cast<const uint32_t*>(shader_binary.data());
+
+        VkShaderModule shaderModule;
+        if (vkCreateShaderModule(mLogicalDevice, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create shader module");
+        }
+
+        return shaderModule;
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -1397,120 +1400,11 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        Generates a dedicated command buffer for each framebuffer.
-
-        Note:
-        - "Primary" level command buffers can be submitted to a queue for execution.
-        - "Secondary" level command buffers cannot be submitted directly, but can be submitted
-            from primary command buffers. Primary buffers cannot do this.
-    Creator:    John Cox, 11/2018
+        ??
+    Creator:    John Cox, 01/2019
     ---------------------------------------------------------------------------------------------*/
-    void CreateCommandBuffers() {
-        mCommandBuffers.resize(mSwapChainFramebuffers.size());
+    void CreateTextureImage() {
 
-        // Note: "AllocateInfo", not "CreateInfo", because command buffers are allocated from the
-        // command pool, not "created", which, in Vulkan terminology, involves creating memory 
-        // for it. There is already memory in the command pool, so we're just allocating from it.
-        VkCommandBufferAllocateInfo commandBufferAllocateInfo{};
-        commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        commandBufferAllocateInfo.commandPool = mCommandPool;
-        commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        commandBufferAllocateInfo.commandBufferCount = static_cast<uint32_t>(mCommandBuffers.size());
-        if (vkAllocateCommandBuffers(mLogicalDevice, &commandBufferAllocateInfo, mCommandBuffers.data()) != VK_SUCCESS) {
-            throw std::runtime_error("failed to allocate command buffers");
-        }
-
-        for (size_t i = 0; i < mCommandBuffers.size(); i++) {
-            // type is actually a pointer, so non-reference assignment is ok
-            auto currentCommandBuffer = mCommandBuffers.at(i);
-
-            VkCommandBufferBeginInfo commandBufferBeginInfo{};
-            commandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-            commandBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
-            if (vkBeginCommandBuffer(currentCommandBuffer, &commandBufferBeginInfo) != VK_SUCCESS) {
-                throw std::runtime_error("failed to begin recording command buffer");
-            }
-
-            VkRenderPassBeginInfo renderPassBeginInfo{};
-            renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-            renderPassBeginInfo.renderPass = mRenderPass;
-            renderPassBeginInfo.framebuffer = mSwapChainFramebuffers.at(i);
-            renderPassBeginInfo.renderArea.offset = { 0, 0 };
-            renderPassBeginInfo.renderArea.extent = mSwapChainExtent;
-
-            // defines the colors for the color attachment's .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR
-            VkClearValue clearColor = { 0.0, 0.0f, 0.0f, 1.0f };
-            renderPassBeginInfo.clearValueCount = 1;
-            renderPassBeginInfo.pClearValues = &clearColor;
-
-            vkCmdBeginRenderPass(currentCommandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-            {
-                VkPipelineBindPoint graphicsBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-                vkCmdBindPipeline(currentCommandBuffer, graphicsBindPoint, mGraphicsPipeline);
-
-                VkBuffer vertexBuffers[] = { mVertexBuffer };
-                VkDeviceSize offsets[] = { 0 };
-                uint32_t firstBindingIndex = Vertex::VERTEX_BUFFER_BINDING_LOCATION;
-                uint32_t bindingCounter = 1;
-                vkCmdBindVertexBuffers(currentCommandBuffer, firstBindingIndex, bindingCounter, vertexBuffers, offsets);
-
-                VkDeviceSize offset = 0;
-                vkCmdBindIndexBuffer(currentCommandBuffer, mVertexIndexBuffer, offset, VK_INDEX_TYPE_UINT16);
-
-                uint32_t firstDescriptorSetIndex = 0;
-                uint32_t descriptorSetCount = 1;
-                uint32_t dynamicOffsetCount = 0;    // not considering dynamic descriptors now (1/1/2019)
-                vkCmdBindDescriptorSets(
-                    currentCommandBuffer, 
-                    graphicsBindPoint, 
-                    mPipelineLayout, 
-                    firstDescriptorSetIndex, 
-                    descriptorSetCount, 
-                    &mDescriptorSets.at(i), 
-                    dynamicOffsetCount, 
-                    nullptr);
-
-                uint32_t indexCount = static_cast<uint32_t>(gVertexIndices.size());
-                uint32_t instanceCount = 1;
-                uint32_t firstIndex = 0;
-                uint32_t vertexOffset = 0;  // you can add a constant offset to the indices (??why would you do that??)
-                uint32_t firstInstance = 0;
-                vkCmdDrawIndexed(currentCommandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
-            }
-            vkCmdEndRenderPass(currentCommandBuffer);
-            if (vkEndCommandBuffer(currentCommandBuffer) != VK_SUCCESS) {
-                throw std::runtime_error("failed to record command buffer");
-            }
-        }
-    }
-
-    /*---------------------------------------------------------------------------------------------
-    Description:
-        Generates the semaphores that will let the
-        "acquire image" ->
-        "execute command buffer" ->
-        "return to swap chain" events occur in order.
-    Creator:    John Cox, 11/2018
-    ---------------------------------------------------------------------------------------------*/
-    void CreateSyncObjects() {
-        mSemaphoresImageAvailable.resize(MAX_FRAMES_IN_FLIGHT);
-        mSemaphoresRenderFinished.resize(MAX_FRAMES_IN_FLIGHT);
-        mInFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
-
-        VkSemaphoreCreateInfo semaphoreCreateInfo{};
-        semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-
-        VkFenceCreateInfo fenceCreateInfo{};
-        fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-        fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-
-        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-            if (vkCreateSemaphore(mLogicalDevice, &semaphoreCreateInfo, nullptr, &mSemaphoresImageAvailable.at(i)) != VK_SUCCESS ||
-                vkCreateSemaphore(mLogicalDevice, &semaphoreCreateInfo, nullptr, &mSemaphoresRenderFinished.at(i)) != VK_SUCCESS ||
-                vkCreateFence(mLogicalDevice, &fenceCreateInfo, nullptr, &mInFlightFences.at(i)) != VK_SUCCESS) {
-                throw std::runtime_error("failed to create synchronization objects for a frame");
-            }
-        }
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -1639,6 +1533,47 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
+        Creates a non-device-local but host-visible and host-coherent buffer, meaning that the
+        buffer will reside in system memory, though it will have a GPU-memory equivalent, and the
+        program will have write access and that it will be immediately uploaded to the GPU upon
+        writing. This has memory copy costs though because the memory has to be sent to the GPU.
+        The vertex data is copied to this buffer once.
+
+        Then we create another buffer that is device local only and that is not host visible,
+        meaning that the memory will reside on the GPU only and that the program will not write to
+        it (that is, vkMapMemory(...) will blow up on us if we try to use it on this buffer's
+        memory). We will then issue a command to copy the memory from the first buffer to the
+        second, then dismiss the first buffer. The program will then run by accessing the
+        device-local memory.
+    Creator:    John Cox, 12/2018
+    ---------------------------------------------------------------------------------------------*/
+    void CreateVertexBuffer() {
+        VkDeviceSize bufferSize = sizeof(gVertexValues[0]) * gVertexValues.size();
+
+        VkBufferUsageFlags bufferUsage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        VkMemoryPropertyFlags memProperties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        VkBuffer stagingBuffer = VK_NULL_HANDLE;
+        VkDeviceMemory stagingBufferMemory = VK_NULL_HANDLE;
+        CreateBuffer(bufferSize, bufferUsage, memProperties, stagingBuffer, stagingBufferMemory);
+
+        void *data = nullptr;
+        VkDeviceSize offset = 0;
+        VkMemoryMapFlags flags = 0;
+        vkMapMemory(mLogicalDevice, stagingBufferMemory, offset, bufferSize, flags, &data);
+        memcpy(data, gVertexValues.data(), static_cast<size_t>(bufferSize));
+        vkUnmapMemory(mLogicalDevice, stagingBufferMemory);
+
+        bufferUsage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+        memProperties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+        CreateBuffer(bufferSize, bufferUsage, memProperties, mVertexBuffer, mVertexBufferMemory);
+
+        CopyBuffer(stagingBuffer, mVertexBuffer, bufferSize);
+        vkDestroyBuffer(mLogicalDevice, stagingBuffer, nullptr);
+        vkFreeMemory(mLogicalDevice, stagingBufferMemory, nullptr);
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
         To avoid duplicate vertex data, we will tell the drawing commands to use vertex by index
         instead of sequentially plucking out 3 vertices at a time from the vertex buffer. After
         setting this up, the drawing will sequentially pluck out 3 indices at a time from the
@@ -1724,7 +1659,13 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        ??what are descripor sets??
+        A descriptor is something like a uniform or an image sampler. The descriptor (shorthand
+        for "data descriptor") tells Vulkan where this information is coming from. The designers
+        of Vulkan did not expect users to have only one descriptor in their shaders (not most of
+        the time, at least), so we do not see a VkDescriptor structure, instead only seeing
+        VkDescriptorSet, indicating possibility for multiple descriptors. When you only have one
+        descriptor, such as in this tutorial prior to image sampling, then the set is size 1 and
+        it is confusing.
     Creator:    John Cox, 01/2019
     ---------------------------------------------------------------------------------------------*/
     void CreateDescriptorSets() {
@@ -1755,7 +1696,7 @@ private:
             descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             descriptorWrite.dstSet = mDescriptorSets.at(i);
             descriptorWrite.dstBinding = 0;
-            
+
             // not actually using a descriptor set array for each image, but the structure expects 
             // an array, so we tell it to start at index 0
             descriptorWrite.dstArrayElement = 0;
@@ -1774,43 +1715,121 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        Creates a non-device-local but host-visible and host-coherent buffer, meaning that the
-        buffer will reside in system memory, though it will have a GPU-memory equivalent, and the
-        program will have write access and that it will be immediately uploaded to the GPU upon
-        writing. This has memory copy costs though because the memory has to be sent to the GPU.
-        The vertex data is copied to this buffer once.
+        Generates a dedicated command buffer for each framebuffer with the same drawing commands
+        in each.
 
-        Then we create another buffer that is device local only and that is not host visible,
-        meaning that the memory will reside on the GPU only and that the program will not write to
-        it (that is, vkMapMemory(...) will blow up on us if we try to use it on this buffer's
-        memory). We will then issue a command to copy the memory from the first buffer to the
-        second, then dismiss the first buffer. The program will then run by accessing the
-        device-local memory.
-    Creator:    John Cox, 12/2018
+        Note:
+        - "Primary" level command buffers can be submitted to a queue for execution.
+        - "Secondary" level command buffers cannot be submitted directly, but can be submitted
+            from primary command buffers. Primary buffers cannot do this.
+    Creator:    John Cox, 11/2018
     ---------------------------------------------------------------------------------------------*/
-    void CreateVertexBuffer() {
-        VkDeviceSize bufferSize = sizeof(gVertexValues[0]) * gVertexValues.size();
+    void CreateCommandBuffers() {
+        mCommandBuffers.resize(mSwapChainFramebuffers.size());
 
-        VkBufferUsageFlags bufferUsage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-        VkMemoryPropertyFlags memProperties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-        VkBuffer stagingBuffer = VK_NULL_HANDLE;
-        VkDeviceMemory stagingBufferMemory = VK_NULL_HANDLE;
-        CreateBuffer(bufferSize, bufferUsage, memProperties, stagingBuffer, stagingBufferMemory);
+        // Note: "AllocateInfo", not "CreateInfo", because command buffers are allocated from the
+        // command pool, not "created", which, in Vulkan terminology, involves creating memory 
+        // for it. There is already memory in the command pool, so we're just allocating from it.
+        VkCommandBufferAllocateInfo commandBufferAllocateInfo{};
+        commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        commandBufferAllocateInfo.commandPool = mCommandPool;
+        commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        commandBufferAllocateInfo.commandBufferCount = static_cast<uint32_t>(mCommandBuffers.size());
+        if (vkAllocateCommandBuffers(mLogicalDevice, &commandBufferAllocateInfo, mCommandBuffers.data()) != VK_SUCCESS) {
+            throw std::runtime_error("failed to allocate command buffers");
+        }
 
-        void *data = nullptr;
-        VkDeviceSize offset = 0;
-        VkMemoryMapFlags flags = 0;
-        vkMapMemory(mLogicalDevice, stagingBufferMemory, offset, bufferSize, flags, &data);
-        memcpy(data, gVertexValues.data(), static_cast<size_t>(bufferSize));
-        vkUnmapMemory(mLogicalDevice, stagingBufferMemory);
+        for (size_t i = 0; i < mCommandBuffers.size(); i++) {
+            // type is actually a pointer, so non-reference assignment is ok
+            auto currentCommandBuffer = mCommandBuffers.at(i);
 
-        bufferUsage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-        memProperties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-        CreateBuffer(bufferSize, bufferUsage, memProperties, mVertexBuffer, mVertexBufferMemory);
+            VkCommandBufferBeginInfo commandBufferBeginInfo{};
+            commandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            commandBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+            if (vkBeginCommandBuffer(currentCommandBuffer, &commandBufferBeginInfo) != VK_SUCCESS) {
+                throw std::runtime_error("failed to begin recording command buffer");
+            }
 
-        CopyBuffer(stagingBuffer, mVertexBuffer, bufferSize);
-        vkDestroyBuffer(mLogicalDevice, stagingBuffer, nullptr);
-        vkFreeMemory(mLogicalDevice, stagingBufferMemory, nullptr);
+            VkRenderPassBeginInfo renderPassBeginInfo{};
+            renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+            renderPassBeginInfo.renderPass = mRenderPass;
+            renderPassBeginInfo.framebuffer = mSwapChainFramebuffers.at(i);
+            renderPassBeginInfo.renderArea.offset = { 0, 0 };
+            renderPassBeginInfo.renderArea.extent = mSwapChainExtent;
+
+            // defines the colors for the color attachment's .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR
+            VkClearValue clearColor = { 0.0, 0.0f, 0.0f, 1.0f };
+            renderPassBeginInfo.clearValueCount = 1;
+            renderPassBeginInfo.pClearValues = &clearColor;
+
+            vkCmdBeginRenderPass(currentCommandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+            {
+                VkPipelineBindPoint graphicsBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+                vkCmdBindPipeline(currentCommandBuffer, graphicsBindPoint, mGraphicsPipeline);
+
+                VkBuffer vertexBuffers[] = { mVertexBuffer };
+                VkDeviceSize offsets[] = { 0 };
+                uint32_t firstBindingIndex = Vertex::VERTEX_BUFFER_BINDING_LOCATION;
+                uint32_t bindingCounter = 1;
+                vkCmdBindVertexBuffers(currentCommandBuffer, firstBindingIndex, bindingCounter, vertexBuffers, offsets);
+
+                VkDeviceSize offset = 0;
+                vkCmdBindIndexBuffer(currentCommandBuffer, mVertexIndexBuffer, offset, VK_INDEX_TYPE_UINT16);
+
+                uint32_t firstDescriptorSetIndex = 0;
+                uint32_t descriptorSetCount = 1;
+                uint32_t dynamicOffsetCount = 0;    // not considering dynamic descriptors now (1/1/2019)
+                vkCmdBindDescriptorSets(
+                    currentCommandBuffer,
+                    graphicsBindPoint,
+                    mPipelineLayout,
+                    firstDescriptorSetIndex,
+                    descriptorSetCount,
+                    &mDescriptorSets.at(i),
+                    dynamicOffsetCount,
+                    nullptr);
+
+                uint32_t indexCount = static_cast<uint32_t>(gVertexIndices.size());
+                uint32_t instanceCount = 1;
+                uint32_t firstIndex = 0;
+                uint32_t vertexOffset = 0;  // you can add a constant offset to the indices (??why would you do that??)
+                uint32_t firstInstance = 0;
+                vkCmdDrawIndexed(currentCommandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
+            }
+            vkCmdEndRenderPass(currentCommandBuffer);
+            if (vkEndCommandBuffer(currentCommandBuffer) != VK_SUCCESS) {
+                throw std::runtime_error("failed to record command buffer");
+            }
+        }
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        Generates the semaphores that will let the
+        "acquire image" ->
+        "execute command buffer" ->
+        "return to swap chain" events occur in order.
+    Creator:    John Cox, 11/2018
+    ---------------------------------------------------------------------------------------------*/
+    void CreateSyncObjects() {
+        mSemaphoresImageAvailable.resize(MAX_FRAMES_IN_FLIGHT);
+        mSemaphoresRenderFinished.resize(MAX_FRAMES_IN_FLIGHT);
+        mInFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
+
+        VkSemaphoreCreateInfo semaphoreCreateInfo{};
+        semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+        VkFenceCreateInfo fenceCreateInfo{};
+        fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+            if (vkCreateSemaphore(mLogicalDevice, &semaphoreCreateInfo, nullptr, &mSemaphoresImageAvailable.at(i)) != VK_SUCCESS ||
+                vkCreateSemaphore(mLogicalDevice, &semaphoreCreateInfo, nullptr, &mSemaphoresRenderFinished.at(i)) != VK_SUCCESS ||
+                vkCreateFence(mLogicalDevice, &fenceCreateInfo, nullptr, &mInFlightFences.at(i)) != VK_SUCCESS) {
+                throw std::runtime_error("failed to create synchronization objects for a frame");
+            }
+        }
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -1863,6 +1882,7 @@ private:
         CreateGraphicsPipeline();
         CreateFramebuffers();
         CreateCommandPool();
+        CreateTextureImage();
         CreateVertexBuffer();
         CreateVertexIndexBuffer();
         CreateUniformBuffers();
