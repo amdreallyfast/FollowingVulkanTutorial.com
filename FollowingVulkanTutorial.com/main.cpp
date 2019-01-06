@@ -173,7 +173,7 @@ private:
     GLFWwindow *mWindow = nullptr;
     uint32_t mWindowWidth = 800;
     uint32_t mWindowHeight = 600;
-    const int MAX_FRAMES_IN_FLIGHT = 2;
+    static const size_t MAX_FRAMES_IN_FLIGHT = 2;
 
 #ifdef NDEBUG
     const bool mEnableValidationLayers = false;
