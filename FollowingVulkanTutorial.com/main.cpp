@@ -1403,18 +1403,18 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        ??
+        Takes a buffer of data on the GPU and copies it into another chunk of memory that is 
+        reserved for use by a particular image. This is how we get texture data into an image for 
+        use as a sampler.
     Creator:    John Cox, 01/2019
     ---------------------------------------------------------------------------------------------*/
-    void CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) {
-        VkCommandBuffer commandBuffer = BeginSingleUseCommandBuffer();
-
+    void CopyBufferToImage(VkBuffer buffer, VkImage image, VkImageLayout memLayout, uint32_t width, uint32_t height) {
         // need to specify which parts of the buffer will be copied to this image
         VkBufferImageCopy region{};
-        
+
         // offset where pixels start
         region.bufferOffset = 0;
-        
+
         // 0 for both indicates close packing (that is, no padding between rows)
         region.bufferRowLength = 0;
         region.bufferImageHeight = 0;
@@ -1428,10 +1428,9 @@ private:
         region.imageOffset = { 0,0,0 };
         region.imageExtent = { width,height,1 };
 
-        // TODO: ??make a parameter instead of hard-coding? is the assumption ok??
-        VkImageLayout currentImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        vkCmdCopyBufferToImage(commandBuffer, buffer, image, currentImageLayout, 1, &region);
 
+        VkCommandBuffer commandBuffer = BeginSingleUseCommandBuffer();
+        vkCmdCopyBufferToImage(commandBuffer, buffer, image, memLayout, 1, &region);
         SubmitAndEndSingleUseCommandBuffer(commandBuffer);
     }
 
@@ -1574,21 +1573,23 @@ private:
 
         // we want this image to live in GPU memory for fast access, but as with the vertex 
         // buffer, DEVICE_LOCAL memory is not host coherent, so we'll have to make a staging 
-        // buffer for it
+        // buffer for it, copy to that, then copy that into device-only-accessible memory
         VkBufferUsageFlags bufferUsage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
         VkMemoryPropertyFlags memProperties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
         VkBuffer stagingBuffer = VK_NULL_HANDLE;
         VkDeviceMemory stagingBufferMemory = VK_NULL_HANDLE;
         CreateBuffer(imageSize, bufferUsage, memProperties, stagingBuffer, stagingBufferMemory);
 
+        // copy pixels to host-coherent GPU memory
         void *data = nullptr;
         VkDeviceSize zeroOffset = 0;
         VkMemoryMapFlags flags = 0;
         vkMapMemory(mLogicalDevice, stagingBufferMemory, zeroOffset, imageSize, flags, &data);
         memcpy(data, pixels, static_cast<size_t>(imageSize));
         vkUnmapMemory(mLogicalDevice, stagingBufferMemory);
-        stbi_image_free(pixels);
+        stbi_image_free(pixels);    // done with the image now
 
+        // now create a Vulkan image for it
         VkFormat imageFormat = VK_FORMAT_R8G8B8A8_UNORM;      //??what happens if it isn't? is this just JPEG??
         VkImageTiling imageTiling = VK_IMAGE_TILING_OPTIMAL;
         VkImageUsageFlags imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
@@ -1601,15 +1602,20 @@ private:
             mTextureImage,
             mTextureImageMemory);
 
+        // can't create an image with memory layout as a transfer destination, so need to change
         VkImageLayout currentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        VkImageLayout dstLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        TransitionImageLayout(mTextureImage, imageFormat, currentLayout, dstLayout);
-        CopyBufferToImage(stagingBuffer, mTextureImage, static_cast<uint32_t>(tWidth), static_cast<uint32_t>(tHeight));
+        VkImageLayout destLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        TransitionImageLayout(mTextureImage, imageFormat, currentLayout, destLayout);
 
+        // copy staging buffer into VkImage memory
+        CopyBufferToImage(stagingBuffer, mTextureImage, destLayout, static_cast<uint32_t>(tWidth), static_cast<uint32_t>(tHeight));
+
+        // now change the image for use in shaders
         currentLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        dstLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        TransitionImageLayout(mTextureImage, imageFormat, currentLayout, dstLayout);
+        destLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        TransitionImageLayout(mTextureImage, imageFormat, currentLayout, destLayout);
 
+        // cleanup
         vkDestroyBuffer(mLogicalDevice, stagingBuffer, nullptr);
         vkFreeMemory(mLogicalDevice, stagingBufferMemory, nullptr);
     }
