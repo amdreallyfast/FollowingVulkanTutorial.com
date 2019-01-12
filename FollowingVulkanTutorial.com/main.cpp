@@ -193,32 +193,32 @@ private:
     VkSurfaceKHR mSurface = VK_NULL_HANDLE;
     VkQueue mPresentationQueue = VK_NULL_HANDLE;
     VkSwapchainKHR mSwapChain = VK_NULL_HANDLE;
-    std::vector<VkImage> mSwapChainImages;
     VkFormat mSwapChainImageFormat = VkFormat::VK_FORMAT_UNDEFINED;
     VkExtent2D mSwapChainExtent{};
     std::vector<VkImageView> mSwapChainImageViews;
     std::vector<VkFramebuffer> mSwapChainFramebuffers;
-    VkRenderPass mRenderPass;
-    VkDescriptorSetLayout mDescriptorSetLayout;
-    VkPipelineLayout mPipelineLayout;    //??what is this??
-    VkPipeline mGraphicsPipeline;
-    VkCommandPool mCommandPool;
+    VkRenderPass mRenderPass = VK_NULL_HANDLE;
+    VkDescriptorSetLayout mDescriptorSetLayout = VK_NULL_HANDLE;
+    VkPipelineLayout mPipelineLayout = VK_NULL_HANDLE;
+    VkPipeline mGraphicsPipeline = VK_NULL_HANDLE;
+    VkCommandPool mCommandPool = VK_NULL_HANDLE;
     std::vector<VkCommandBuffer> mCommandBuffers;
     std::vector<VkSemaphore> mSemaphoresImageAvailable;
     std::vector<VkSemaphore> mSemaphoresRenderFinished;
     std::vector<VkFence> mInFlightFences;
     size_t mCurrentFrame = 0;
     bool mFrameBufferResized = false;   // not all drivers properly handle window resize notifications in Vulkan
-    VkBuffer mVertexBuffer;
-    VkDeviceMemory mVertexBufferMemory;
-    VkBuffer mVertexIndexBuffer;
-    VkDeviceMemory mVertexIndexBufferMemory;
+    VkBuffer mVertexBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory mVertexBufferMemory = VK_NULL_HANDLE;
+    VkBuffer mVertexIndexBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory mVertexIndexBufferMemory = VK_NULL_HANDLE;
     std::vector<VkBuffer> mUniformBuffers;
     std::vector<VkDeviceMemory> mUniformBuffersMemory;
-    VkDescriptorPool mDescriptorPool;
+    VkDescriptorPool mDescriptorPool = VK_NULL_HANDLE;
     std::vector<VkDescriptorSet> mDescriptorSets;
-    VkImage mTextureImage;
-    VkDeviceMemory mTextureImageMemory;
+    VkImage mTextureImage = VK_NULL_HANDLE;
+    VkImageView mTextureImageView = VK_NULL_HANDLE;
+    VkDeviceMemory mTextureImageMemory = VK_NULL_HANDLE;
 
 
     const std::vector<const char *> mRequiredDeviceExtensions{
@@ -901,12 +901,22 @@ private:
         // than that (I don't know why it would, but it can, and need to account for it).
         uint32_t imageCount = 0;
         vkGetSwapchainImagesKHR(mLogicalDevice, mSwapChain, &imageCount, nullptr);
-        mSwapChainImages.resize(imageCount);
-        vkGetSwapchainImagesKHR(mLogicalDevice, mSwapChain, &imageCount, mSwapChainImages.data());
+        std::vector<VkImage> swapChainImages(imageCount, VK_NULL_HANDLE);
+        vkGetSwapchainImagesKHR(mLogicalDevice, mSwapChain, &imageCount, swapChainImages.data());
 
-        // also store these for later
+        // store these for later
         mSwapChainImageFormat = surfaceFormat.format;
         mSwapChainExtent = extent;
+
+        // create a "view" for each image
+        // Note: A "view" tells Vulkan how to handle the array of data that we generically call 
+        // "image". Not every "image" is a finished drawing. It may be a rendering from a 
+        // particular point of view and will be used as a texture, or it may be a lighting map 
+        // with simple intensity values, or it could simply be a finished array of pixel colors.
+        mSwapChainImageViews.resize(swapChainImages.size());
+        for (size_t i = 0; i < swapChainImages.size(); i++) {
+            mSwapChainImageViews.at(i) = CreateImageView(swapChainImages.at(i), mSwapChainImageFormat);
+        }
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -949,7 +959,6 @@ private:
         CleanupSwapChain();
 
         CreateSwapChain();
-        CreateImageViews();
         CreateRenderPass();
         // Note: Not recreating the descriptor set layout because those are independent of image.
         CreateGraphicsPipeline();
@@ -957,51 +966,44 @@ private:
         CreateCommandBuffers();
     }
 
-
     /*---------------------------------------------------------------------------------------------
     Description:
-        Creates an "image view" object for each image in the swap chain. A "view" tells Vulkan how
-        to handle the array of data that we generically call "image". Not every "image" is a
-        finished drawing though. It may be a rendering from a particular point of view and will be
-        used as a texture, or maybe it is a lighting map with simple intensity values, or maybe it
-        really is a finished array of pixel colors.
+        At this time (1/12/2019) in the tutorial (Textre Mapping: Image view and sampler), the 
+        image view create is mostly the same, so while image creation is special, image view 
+        creation is not. We are not using images for depth, which require a different type of
+        image view.
     Creator:    John Cox, 11/2018
     ---------------------------------------------------------------------------------------------*/
-    void CreateImageViews() {
-        //??is mSwapChainImages just a temporary value? can I delete it an only use it here??
-        mSwapChainImageViews.resize(mSwapChainImages.size());
+    VkImageView CreateImageView(VkImage image, VkFormat format) {
+        VkImageViewCreateInfo createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        createInfo.image = image;
+        createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        createInfo.format = format;
 
-        for (size_t i = 0; i < mSwapChainImages.size(); i++) {
-            VkImageViewCreateInfo createInfo{};
-            createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-            createInfo.image = mSwapChainImages.at(i);
-            createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;    // 2D texture
-            createInfo.format = mSwapChainImageFormat;
+        // we could mess with the mappings of components.r, components.g, etc. and set all 
+        // color components in the view to be "red" (VK_COMPONENT_SWIZZLE_R), thus giving us a 
+        // monochrome red shade, or we could leave them at their default values 
+        // (VK_COMPONENT_SWIZZLE_IDENTITY = 0), which is what we're going to do here 
+        // Note: I could ignore this completely since structure creation with {} makes them all 0, 
+        // but for the sake fo the tutorial, I will be explicit.
+        createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+        createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+        createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+        createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
 
-            // we could mess with the mappings of components.r, components.g, etc. and set all 
-            // color components in the view to be "red" (VK_COMPONENT_SWIZZLE_R), thus giving us a 
-            // monochrome red shade, or we could leave them at their default values 
-            // (VK_COMPONENT_SWIZZLE_IDENTITY = 0), which is what we're going to do here 
-            createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-            createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-            createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-            createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+        // image is used for color, no mip mapping, and 1 layer (stereoscopic 3D needs 2 layers (??I think??))
+        createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        createInfo.subresourceRange.baseMipLevel = 0;
+        createInfo.subresourceRange.levelCount = 1;
+        createInfo.subresourceRange.baseArrayLayer = 0;
+        createInfo.subresourceRange.layerCount = 1;
 
-            // using the image as a simple color texture target ("target" being what is rendered 
-            // to) with no mipmapping 
-            // Note: Only 1 layer since we are not doing steroscopic 3D (that needs 2).
-            createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            createInfo.subresourceRange.baseMipLevel = 0;
-            createInfo.subresourceRange.levelCount = 1;
-            createInfo.subresourceRange.baseArrayLayer = 0;
-            createInfo.subresourceRange.layerCount = 1;
-
-            // swap chain is created from the logical device, and so the image views of the swap 
-            // chain's images are also created from logical device
-            if (vkCreateImageView(mLogicalDevice, &createInfo, nullptr, &mSwapChainImageViews.at(i)) != VK_SUCCESS) {
-                throw std::runtime_error("failed to create image views");
-            }
+        VkImageView view = VK_NULL_HANDLE;
+        if (vkCreateImageView(mLogicalDevice, &createInfo, nullptr, &view) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create image views");
         }
+        return view;
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -1615,6 +1617,9 @@ private:
         destLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         TransitionImageLayout(mTextureImage, imageFormat, currentLayout, destLayout);
 
+        // lastly, create a view for the new image
+        mTextureImageView = CreateImageView(mTextureImage, VK_FORMAT_R8G8B8A8_UNORM);
+
         // cleanup
         vkDestroyBuffer(mLogicalDevice, stagingBuffer, nullptr);
         vkFreeMemory(mLogicalDevice, stagingBufferMemory, nullptr);
@@ -1859,10 +1864,10 @@ private:
         VkDeviceSize bufferSize = sizeof(UniformBufferObject);
         VkBufferUsageFlags bufferUsage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
         VkMemoryPropertyFlags memProperties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-        mUniformBuffers.resize(mSwapChainImages.size());
-        mUniformBuffersMemory.resize(mSwapChainImages.size());
+        mUniformBuffers.resize(mSwapChainImageViews.size());
+        mUniformBuffersMemory.resize(mSwapChainImageViews.size());
 
-        for (size_t i = 0; i < mSwapChainImages.size(); i++) {
+        for (size_t i = 0; i < mSwapChainImageViews.size(); i++) {
             CreateBuffer(bufferSize, bufferUsage, memProperties, mUniformBuffers.at(i), mUniformBuffersMemory.at(i));
             // need to write new transforms every frame, so w'll do memory mapping later
         }
@@ -1876,7 +1881,7 @@ private:
     void CreateDescriptorPool() {
         VkDescriptorPoolSize poolSize{};
         poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        poolSize.descriptorCount = static_cast<uint32_t>(mSwapChainImages.size());
+        poolSize.descriptorCount = static_cast<uint32_t>(mSwapChainImageViews.size());
 
         VkDescriptorPoolCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -1887,7 +1892,7 @@ private:
         // VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT flag, in which descriptor sets can 
         // be freed and recreated at runtime. We won't be creating any descriptor sets on the fly, 
         // so the maximum number of descriptor sets is the same as the number required.
-        createInfo.maxSets = static_cast<uint32_t>(mSwapChainImages.size());
+        createInfo.maxSets = static_cast<uint32_t>(mSwapChainImageViews.size());
 
         if (vkCreateDescriptorPool(mLogicalDevice, &createInfo, nullptr, &mDescriptorPool) != VK_SUCCESS) {
             throw std::runtime_error("failed to create descriptor pool");
@@ -1908,22 +1913,22 @@ private:
     void CreateDescriptorSets() {
         // create duplicate descriptor set layouts (because Vulkan expects an array of them and 
         // cannot be told that they are all one and the same)
-        std::vector<VkDescriptorSetLayout> layouts(mSwapChainImages.size(), mDescriptorSetLayout);
+        std::vector<VkDescriptorSetLayout> layouts(mSwapChainImageViews.size(), mDescriptorSetLayout);
         VkDescriptorSetAllocateInfo allocateInfo{};
         allocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
         allocateInfo.descriptorPool = mDescriptorPool;
-        allocateInfo.descriptorSetCount = static_cast<uint32_t>(mSwapChainImages.size());
+        allocateInfo.descriptorSetCount = static_cast<uint32_t>(mSwapChainImageViews.size());
         allocateInfo.pSetLayouts = layouts.data();
 
         // Note: This is an "allocate" function, not a "create" function, and it allocates from a 
         // pool that was already created, so we don't need to explicitly free or destroy the 
         // descriptor sets. They will be destroyed when the pool is.
-        mDescriptorSets.resize(mSwapChainImages.size());
+        mDescriptorSets.resize(mSwapChainImageViews.size());
         if (vkAllocateDescriptorSets(mLogicalDevice, &allocateInfo, mDescriptorSets.data()) != VK_SUCCESS) {
             throw std::runtime_error("failed to allocate descriptor sets");
         }
 
-        for (size_t i = 0; i < mSwapChainImages.size(); i++) {
+        for (size_t i = 0; i < mSwapChainImageViews.size(); i++) {
             VkDescriptorBufferInfo bufferInfo{};
             bufferInfo.buffer = mUniformBuffers.at(i);
             bufferInfo.offset = 0;
@@ -2113,7 +2118,6 @@ private:
         PickPhysicalDevice();
         CreateLogicalDevice();
         CreateSwapChain();
-        CreateImageViews();
         CreateRenderPass();
         CreateDescriptorSetLayout();
         CreateGraphicsPipeline();
@@ -2292,11 +2296,12 @@ private:
 
         // TODO: change uniform buffer binding to, say, 7
         // TODO: replace all vector/array accesses of [i] with .at(i)
+        vkDestroyImageView(mLogicalDevice, mTextureImageView, nullptr);
         vkDestroyImage(mLogicalDevice, mTextureImage, nullptr);
         vkFreeMemory(mLogicalDevice, mTextureImageMemory, nullptr);
 
         vkDestroyDescriptorSetLayout(mLogicalDevice, mDescriptorSetLayout, nullptr);
-        for (size_t i = 0; i < mSwapChainImages.size(); i++) {
+        for (size_t i = 0; i < mSwapChainImageViews.size(); i++) {
             vkDestroyBuffer(mLogicalDevice, mUniformBuffers.at(i), nullptr);
             vkFreeMemory(mLogicalDevice, mUniformBuffersMemory.at(i), nullptr);
         }
