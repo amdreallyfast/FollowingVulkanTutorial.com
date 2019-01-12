@@ -77,19 +77,30 @@ struct Vertex {
 Description:
     In Vulkan, unlike OpenGL, Normalized Device Coordinate (NDC) (-1,-1) is the top left like
     Direct3D. In OpenGL, NDC (-1,-1) was the bottom left.
+
+    Note: Window coordinates are [0,0] in the top left and [1,1] in the lower right. When 
+    tinkering with these values, be aware of a couple things:
+    1. Clockwise/counterclockwise face culling.
+    2. Where the camera (the "eye") is relative to the triangles. Viewed from one side, three 
+        vertices will be considered a clockwise face, and counterclockwise when viewed from the 
+        other.
+
+    The camera in this tutorial was given an eye at (2,2,2) that looked at (0,0,0) while assuming 
+    that +Z (0,0,1) was up. The projection matrix flipped the Y to make sure the faces remained 
+    counterclockwise. This works, but seems a bit convoluted then just relying on the Vulkan 
+    coordinate system.
 Creator:    John Cox, 12/2018
 -------------------------------------------------------------------------------------------------*/
 const std::vector<Vertex> gVertexValues = {
-    // TODO: tinker with these to figure out what on earth the coordinate system is
-    //{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-    //{{+0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-    //{{+0.5f, +0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-    //{{-0.5f, +0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
-
     {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
     {{+0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
     {{+0.5f, +0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
     {{-0.5f, +0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
+
+    //{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+    //{{-0.5f, +0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
+    //{{+0.5f, +0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+    //{{+0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
 };
 
 /*-------------------------------------------------------------------------------------------------
@@ -1290,13 +1301,13 @@ private:
         rasterizerCreateInfo.depthClampEnable = VK_FALSE; //??why are we using false??
         rasterizerCreateInfo.rasterizerDiscardEnable = VK_FALSE; // definitely want rasterization
         rasterizerCreateInfo.polygonMode = VK_POLYGON_MODE_FILL;    // or LINE or POINT
-        //rasterizerCreateInfo.polygonMode = VK_POLYGON_MODE_POINT;
         rasterizerCreateInfo.lineWidth = 1.0f;  //>1.0f requires enabling "wideLines" GPU feature
         rasterizerCreateInfo.cullMode = VK_CULL_MODE_BACK_BIT;
         
         // changed from `CLOCKWISE` because the GLM project matrix had to have its Y axis flipped 
         // to bring it in line with Vulkan's NDCs
         rasterizerCreateInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        //rasterizerCreateInfo.frontFace = VK_FRONT_FACE_CLOCKWISE;
         rasterizerCreateInfo.depthBiasEnable = VK_FALSE;    //??what is "depth bias"??
 
         // multisampling is an antialiasing technique that combines fragment shader results of 
@@ -2272,12 +2283,15 @@ private:
         UniformBufferObject ubo{};
 
         // starting with identity matrix, rotate with elapsed time around the Z axis
-        //ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-        ubo.model = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        //ubo.model = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
 
         // eye at (2,2,2), looking at (0,0,0), with Z axis as "up"
-        //ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-        ubo.view = glm::lookAt(glm::vec3(1.0f, 0.0f, 1.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        // Note: Flip the camera's "up" (in this case Z) axis from + to - as an alternative to 
+        // dealing with the counterclockwise face culling problem that is currently dealt with by 
+        // flipping one of the projection transform's Y axes.
+        ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        ubo.view[1][1] *= +1;
 
         // Note: If the screen was resized and the swap chain had to be recreated, this 
         // calculation will use the latest values, and so RecreateSwapChain(...) doesn't have to 
@@ -2290,7 +2304,17 @@ private:
         float nearPlaneDist = 0.1f;
         float farPlaneDist = 10.0f;
         ubo.proj = glm::perspective(glm::radians(45.0f), aspectRatio, nearPlaneDist, farPlaneDist);
-        ubo.proj[1][1] *= -1;   // flip the Y (don't know why this math works, but it does)
+
+        // Note: See the vertex structure's description for more detail, but in essance, this 
+        // tutorial is considered counterclockwise faces to be the front, but positioning the 
+        // camera ("eye"/"view") as it is moves the vertices such that they draw clockwise, and so 
+        // the tutorial flipped the Y on the projection matrix. I experimented and found that 
+        // flipping view[1][1] in the same way doesn't work, so this hack on the Y axis only works 
+        // in the projection matrix. This could also be achieved by flipping the camera's Z axis 
+        // over from + to -, or by rearranging the vertices to draw differently. For whatever 
+        // reason, he went with this approach. In the long rong, it is probably not important since 
+        // we'll start importing thousands of vertices or more from scene files.
+        ubo.proj[1][1] *= -1;
 
         void *data = nullptr;
         VkDeviceSize offset = 0;
