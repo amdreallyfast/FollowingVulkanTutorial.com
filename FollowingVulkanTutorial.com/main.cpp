@@ -219,6 +219,7 @@ private:
     VkImage mTextureImage = VK_NULL_HANDLE;
     VkImageView mTextureImageView = VK_NULL_HANDLE;
     VkDeviceMemory mTextureImageMemory = VK_NULL_HANDLE;
+    VkSampler mTextureSampler = VK_NULL_HANDLE;
 
 
     const std::vector<const char *> mRequiredDeviceExtensions{
@@ -693,6 +694,7 @@ private:
         VkPhysicalDeviceFeatures deviceFeatures;
         vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
         bool supportsGeometryShader = deviceFeatures.geometryShader;
+        bool supportsSamplerAnisotropy = deviceFeatures.samplerAnisotropy;
 
         QueueFamilyIndices indices = FindQueueFamilies(device);
         bool hasAllRequiredQueueFamilyIndices = indices.IsComplete();
@@ -710,6 +712,7 @@ private:
         bool suitable =
             isDiscreteGpu &&
             supportsGeometryShader &&
+            supportsSamplerAnisotropy &&
             hasAllRequiredQueueFamilyIndices &&
             deviceExtensionsSupported &&
             swapChainAdequate;
@@ -752,11 +755,19 @@ private:
 
         std::vector<VkDeviceQueueCreateInfo> deviceCommandQueuesCreateInfo;
 
-        // using a std::set(...) because it is possible that the queue that supports surface drawing is the same as the graphics queue, and don't want to create duplicate queues (??wat??)
+        // Note: Graphics command queues on dedicated graphics cards will also be accepted by the 
+        // OS as being able to draw to a surface. This is not always the case across all graphics 
+        // devices and all OSs. This tutorial is being done on an NVidia GTX 980 TI, who's 
+        // graphics commands queue can put out results to a surface. For design reasons, we are 
+        // keeping the "graphics queue" and the "presentation queue" two queues in separate 
+        // structures, but they are actually the same thing. When creating a logical device, we 
+        // need to tell it how many *unique* command queues it has, hence std::set(...). I could 
+        // certainly hard-code the use of one of them and move one, but this verbose approach is 
+        // better for a tutorial.
         std::set<uint32_t> uniqueQueueFamiliesIndices{
             indices.graphicsFamily.value(),
             indices.presentationFamily.value()
-        };  //??why a set??
+        };
         for (const auto &queueFamilyIndex : uniqueQueueFamiliesIndices) {
             VkDeviceQueueCreateInfo createInfo{};
             createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -768,6 +779,7 @@ private:
 
         // don't need any features yet, so leave it blank for now
         VkPhysicalDeviceFeatures deviceFeatures{};
+        deviceFeatures.samplerAnisotropy = VK_TRUE;
 
         VkDeviceCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -1627,6 +1639,52 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
+        A texture sampler tells Vulkan how to access the pixels of an image ("an image" indicating 
+        to any image that it is applied to; the sampler itself does not have a link to any image). 
+        If the fragment density exceeds the texel density for a given triangle and texture, and 
+        nothing clever is done but rather the fragment shader just takes the closest pixel, then 
+        the result is blocky and pixelated as a chunk of fragments take on the same texel, and an 
+        adjacent chunk of fragments take on the adjacent text. This is called "oversampling", and 
+        can be seen with low-res textures up close.
+        
+        On the flip side (that is, the fragment density is less than the texel density), adjacent 
+        fragments will take on non-adjacent texels, and the result is blurry. This is called 
+        "undersampling", and can be seen with hi-res textures at a distance.
+
+        A sampler can specify filtering techniques and how to handle texel coordinate requests 
+        that are outside the border of the texture (repeat for a tiled image, mirrored repeat, 
+        clamping).
+
+        Note: "Minification" is the process of dealing with oversampling, and "magnification" is 
+        the process of dealing with undersampling.
+    Creator:    John Cox, 01/2019
+    ---------------------------------------------------------------------------------------------*/
+    void CreateTextureSampler() {
+        VkSamplerCreateInfo createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        createInfo.magFilter = VK_FILTER_LINEAR;    // more texels than fragments
+        createInfo.minFilter = VK_FILTER_LINEAR;    // more fragments than texels
+        createInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;   // in other words, tiling
+        createInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        createInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        createInfo.anisotropyEnable = VK_TRUE;
+        createInfo.maxAnisotropy = 16;
+        createInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+        createInfo.unnormalizedCoordinates = VK_FALSE;  // ??maybe TRUE if using sparse textures??
+        createInfo.compareEnable = VK_FALSE;    // not using "texel compare" operations for now
+        createInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+        createInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        createInfo.mipLodBias = 0.0f;
+        createInfo.minLod = 0.0f;
+        createInfo.maxLod = 0.0;
+
+        if (vkCreateSampler(mLogicalDevice, &createInfo, nullptr, &mTextureSampler) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create texture sampler");
+        }
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
         Not all memory is created equal. Some is only available on the GPU ("device local"), some
         is visible to the host (the program), some is coherent (immediately copied to a duplicate
         chunk of GPU memory upon writing, though this has system-memory->GPU-memory transfer
@@ -2124,6 +2182,7 @@ private:
         CreateFramebuffers();
         CreateCommandPool();
         CreateTextureImage();
+        CreateTextureSampler();
         CreateVertexBuffer();
         CreateVertexIndexBuffer();
         CreateUniformBuffers();
@@ -2294,8 +2353,7 @@ private:
     void Cleanup() {
         CleanupSwapChain();
 
-        // TODO: change uniform buffer binding to, say, 7
-        // TODO: replace all vector/array accesses of [i] with .at(i)
+        vkDestroySampler(mLogicalDevice, mTextureSampler, nullptr);
         vkDestroyImageView(mLogicalDevice, mTextureImageView, nullptr);
         vkDestroyImage(mLogicalDevice, mTextureImage, nullptr);
         vkFreeMemory(mLogicalDevice, mTextureImageMemory, nullptr);
