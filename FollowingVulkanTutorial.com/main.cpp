@@ -35,9 +35,11 @@ Creator:    John Cox, 12/2018
 struct Vertex {
     glm::vec2 pos;
     glm::vec3 color;
+    glm::vec2 texCoord;
 
-    // "5" in order to demonstrate that we do not have to use 0 just because we only have one 
-    // vertex buffer at this time (12/29/2019) (could have used 3, or 7, or whatever)
+    // Note: Using "5" in order to demonstrate that we do not have to use 0 just because we only 
+    // have one vertex buffer at this time (12/29/2019). We could have used 3, or 7, or whatever, 
+    // though I think that there is a maximum limit, because saying 99 causes an error)
     static const uint32_t VERTEX_BUFFER_BINDING_LOCATION = 5;
 
     static VkVertexInputBindingDescription GetBindingDescription() {
@@ -48,8 +50,8 @@ struct Vertex {
         return bindingDescription;
     }
 
-    static std::array<VkVertexInputAttributeDescription, 2> GetAttributeDescription() {
-        std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
+    static std::array<VkVertexInputAttributeDescription, 3> GetAttributeDescription() {
+        std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions;
 
         // "pos" hijacks the color format enum to say "two 32bit floats"
         attributeDescriptions.at(0).binding = VERTEX_BUFFER_BINDING_LOCATION;
@@ -61,6 +63,12 @@ struct Vertex {
         attributeDescriptions.at(1).location = 1;
         attributeDescriptions.at(1).format = VK_FORMAT_R32G32B32A32_SFLOAT;
         attributeDescriptions.at(1).offset = offsetof(Vertex, color);
+
+        attributeDescriptions.at(2).binding = VERTEX_BUFFER_BINDING_LOCATION;
+        attributeDescriptions.at(2).location = 2;
+        attributeDescriptions.at(2).format = VK_FORMAT_R32G32B32A32_SFLOAT;
+        attributeDescriptions.at(2).offset = offsetof(Vertex, texCoord);
+        
         return attributeDescriptions;
     }
 };
@@ -72,10 +80,16 @@ Description:
 Creator:    John Cox, 12/2018
 -------------------------------------------------------------------------------------------------*/
 const std::vector<Vertex> gVertexValues = {
-    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-    {{+0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-    {{+0.5f, +0.5f}, {0.0f, 0.0f, 1.0f}},
-    {{-0.5f, +0.5f}, {1.0f, 1.0f, 1.0f}},
+    // TODO: tinker with these to figure out what on earth the coordinate system is
+    //{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+    //{{+0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+    //{{+0.5f, +0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+    //{{-0.5f, +0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
+
+    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+    {{+0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+    {{+0.5f, +0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+    {{-0.5f, +0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
 };
 
 /*-------------------------------------------------------------------------------------------------
@@ -780,6 +794,7 @@ private:
         // don't need any features yet, so leave it blank for now
         VkPhysicalDeviceFeatures deviceFeatures{};
         deviceFeatures.samplerAnisotropy = VK_TRUE;
+        //deviceFeatures.fillModeNonSolid = VK_TRUE;
 
         VkDeviceCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -1101,11 +1116,13 @@ private:
 
         Note: It is possible for the shader's descriptor at a particular binding index (in this
         case we're using 0) to specify an array of descriptor objects, such as an array of uniform
-        buffer objects, each with a a set of transforms, for every "bone" in a skeletal animation.
+        buffer objects, each with a set of transforms, for every "bone" in a skeletal animation.
         We're just using a single descriptor though, so our descriptor count is only 1;
     Creator:    John Cox, 01/2019
     ---------------------------------------------------------------------------------------------*/
     void CreateDescriptorSetLayout() {
+        // Note: Despite the name, this is info about a single descriptor, not a set. It is to be 
+        // understood as a single descriptor "binding" within a descriptor set.
         VkDescriptorSetLayoutBinding uboLayoutBinding{};
         uboLayoutBinding.binding = 0;   // same binding location as in the shader that uses it
         uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -1113,10 +1130,19 @@ private:
         uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
         uboLayoutBinding.pImmutableSamplers = nullptr;  // no textures yet at this time (1-1-2019)
 
+        VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+        samplerLayoutBinding.binding = 1;
+        samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        samplerLayoutBinding.descriptorCount = 1;
+        samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        samplerLayoutBinding.pImmutableSamplers = nullptr;
+
+        std::array<VkDescriptorSetLayoutBinding, 2> bindings = { uboLayoutBinding, samplerLayoutBinding };
+
         VkDescriptorSetLayoutCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        createInfo.bindingCount = 1;
-        createInfo.pBindings = &uboLayoutBinding;
+        createInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+        createInfo.pBindings = bindings.data();
 
         if (vkCreateDescriptorSetLayout(mLogicalDevice, &createInfo, nullptr, &mDescriptorSetLayout) != VK_SUCCESS) {
             throw std::runtime_error("failed to create descriptor set layout!");
@@ -1264,6 +1290,7 @@ private:
         rasterizerCreateInfo.depthClampEnable = VK_FALSE; //??why are we using false??
         rasterizerCreateInfo.rasterizerDiscardEnable = VK_FALSE; // definitely want rasterization
         rasterizerCreateInfo.polygonMode = VK_POLYGON_MODE_FILL;    // or LINE or POINT
+        //rasterizerCreateInfo.polygonMode = VK_POLYGON_MODE_POINT;
         rasterizerCreateInfo.lineWidth = 1.0f;  //>1.0f requires enabling "wideLines" GPU feature
         rasterizerCreateInfo.cullMode = VK_CULL_MODE_BACK_BIT;
         
@@ -1933,18 +1960,26 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        One set of data descriptors (uniform buffer objects) per frame.
+        For this tutorial at this stage (Texture mapping: Combined image sampler), we will 
+        allocate a UBO and a sampler for each possible frame.
+        
+        Note: We could do fewer than the swap chain image size, but then we might run out, and 
+        allocating more will leave some of them unused, and these things are cheap little 
+        structures anyway, so just allocate 1 for each frame.
     Creator:    John Cox, 01/2019
     ---------------------------------------------------------------------------------------------*/
     void CreateDescriptorPool() {
-        VkDescriptorPoolSize poolSize{};
-        poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        poolSize.descriptorCount = static_cast<uint32_t>(mSwapChainImageViews.size());
+        std::array<VkDescriptorPoolSize, 2> poolSizes{};
+        poolSizes.at(0).type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        poolSizes.at(0).descriptorCount = static_cast<uint32_t>(mSwapChainImageViews.size());
+        poolSizes.at(1).type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        poolSizes.at(1).descriptorCount = static_cast<uint32_t>(mSwapChainImageViews.size());
 
         VkDescriptorPoolCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        createInfo.poolSizeCount = 1;
-        createInfo.pPoolSizes = &poolSize;
+        createInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+        createInfo.pPoolSizes = poolSizes.data();
+        createInfo.maxSets = static_cast<uint32_t>(mSwapChainImageViews.size());
 
         // Note: It is possible to create a "free descriptor set pool" via the 
         // VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT flag, in which descriptor sets can 
@@ -1960,12 +1995,15 @@ private:
     /*---------------------------------------------------------------------------------------------
     Description:
         A descriptor is something like a uniform or an image sampler. The descriptor (shorthand
-        for "data descriptor") tells Vulkan where this information is coming from. The designers
-        of Vulkan did not expect users to have only one descriptor in their shaders (not most of
-        the time, at least), so we do not see a VkDescriptor structure, instead only seeing
-        VkDescriptorSet, indicating possibility for multiple descriptors. When you only have one
-        descriptor, such as in this tutorial prior to image sampling, then the set is size 1 and
-        it is confusing.
+        for "data descriptor") tells Vulkan where this information is coming from. Info on 
+        individual descriptors is generalized in the descriptor set layout setup and given exact 
+        info here via VkDescriptorBufferInfo (or VkDescriptorImageInfo, or others).
+
+        Note: The designers of Vulkan did not expect users to have only one descriptor in their 
+        shaders (not most of the time, at least), so we do not see a VkDescriptor structure, 
+        instead only seeing VkDescriptorSet, indicating possibility for multiple descriptors. When 
+        you only have one descriptor, such as in this tutorial prior to image sampling, then the 
+        set is size 1 and the plural terminology is confusing.
     Creator:    John Cox, 01/2019
     ---------------------------------------------------------------------------------------------*/
     void CreateDescriptorSets() {
@@ -1986,30 +2024,45 @@ private:
             throw std::runtime_error("failed to allocate descriptor sets");
         }
 
+        // now we write info to the descriptor sets
         for (size_t i = 0; i < mSwapChainImageViews.size(); i++) {
             VkDescriptorBufferInfo bufferInfo{};
             bufferInfo.buffer = mUniformBuffers.at(i);
             bufferInfo.offset = 0;
             bufferInfo.range = sizeof(UniformBufferObject);
 
-            VkWriteDescriptorSet descriptorWrite{};
-            descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWrite.dstSet = mDescriptorSets.at(i);
-            descriptorWrite.dstBinding = 0;
+            // arguably should be called VkDescriptorSamplerInfo, but eh
+            // Note: The layout is the same value used when transitioning the texture image after 
+            // copying.
+            VkDescriptorImageInfo imageInfo{};
+            imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; 
+            imageInfo.imageView = mTextureImageView;
+            imageInfo.sampler = mTextureSampler;
 
-            // not actually using a descriptor set array for each image, but the structure expects 
-            // an array, so we tell it to start at index 0
-            descriptorWrite.dstArrayElement = 0;
-            descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            descriptorWrite.descriptorCount = 1;
-            descriptorWrite.pBufferInfo = &bufferInfo;
-            descriptorWrite.pImageInfo = nullptr;
-            descriptorWrite.pTexelBufferView = nullptr;
+            // Note: The updating of descriptor sets expects a pointer to an array, so even if we 
+            // only have a single descriptor, we will still need to pass a pointer to the "write" 
+            // structure.
+            std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
+            descriptorWrites.at(0).sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrites.at(0).dstSet = mDescriptorSets.at(i);
+            descriptorWrites.at(0).dstBinding = 0;  // same as during layout setup
+            descriptorWrites.at(0).dstArrayElement = 0;
+            descriptorWrites.at(0).descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            descriptorWrites.at(0).descriptorCount = 1;
+            descriptorWrites.at(0).pBufferInfo = &bufferInfo;
 
-            uint32_t writeCount = 1;
+            descriptorWrites.at(1).sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrites.at(1).dstSet = mDescriptorSets.at(i);
+            descriptorWrites.at(1).dstBinding = 1;  // same as during layout setup
+            descriptorWrites.at(1).dstArrayElement = 0;
+            descriptorWrites.at(1).descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            descriptorWrites.at(1).descriptorCount = 1;
+            descriptorWrites.at(1).pImageInfo = &imageInfo;
+
+            uint32_t writeCount = static_cast<uint32_t>(descriptorWrites.size());
             uint32_t copyCount = 0; // ??why would you copy descriptors at runtime??
             VkCopyDescriptorSet descriptorCopy{};
-            vkUpdateDescriptorSets(mLogicalDevice, writeCount, &descriptorWrite, copyCount, &descriptorCopy);
+            vkUpdateDescriptorSets(mLogicalDevice, writeCount, descriptorWrites.data(), copyCount, &descriptorCopy);
         }
     }
 
@@ -2219,10 +2272,12 @@ private:
         UniformBufferObject ubo{};
 
         // starting with identity matrix, rotate with elapsed time around the Z axis
-        ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        //ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        ubo.model = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
 
         // eye at (2,2,2), looking at (0,0,0), with Z axis as "up"
-        ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        //ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        ubo.view = glm::lookAt(glm::vec3(1.0f, 0.0f, 1.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
 
         // Note: If the screen was resized and the swap chain had to be recreated, this 
         // calculation will use the latest values, and so RecreateSwapChain(...) doesn't have to 

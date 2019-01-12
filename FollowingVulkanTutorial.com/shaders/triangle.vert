@@ -15,10 +15,20 @@ layout(set = 0, binding = 0) uniform UniformBufferObject {
 
 layout(location = 0) in vec2 inPosition;
 layout(location = 1) in vec3 inColor;
+layout(location = 2) in vec2 inTexCoord;
 
 layout(location = 0) out vec3 fragColor;
+layout(location = 1) out vec2 fragTexCoord;
 
 void main() {
     gl_Position = ubo.proj * ubo.view * ubo.model * vec4(inPosition, 0.0f, 1.0f);
+    //gl_Position = ubo.proj * ubo.view * vec4(inPosition, 0.0f, 1.0f);   // no rotation
+    //gl_Position = ubo.proj * vec4(inPosition, 0.0f, 1.0f);  // blank ??why??
+    //gl_Position = vec4(inPosition, 0.0f, 1.0f);     // blank ??why??
+
     fragColor = inColor;
+    fragTexCoord = inTexCoord;
+
+    //gl_Position = vec4(0.5f, 0.5f, 0.0f, 1.0f);
+    //fragColor = vec3(1.0f, 1.0f, 1.0f);
 }
