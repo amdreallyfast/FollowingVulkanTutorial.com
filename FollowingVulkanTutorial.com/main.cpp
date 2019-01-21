@@ -5,13 +5,20 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
-#define GLM_FORCE_RADIANS
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 #include <glm/mat4x4.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <chrono>
 
+// by default GLM understands angle arguments to matrix transform generation as degrees
+#define GLM_FORCE_RADIANS
+
+// Note: Vulkan's depth buffer is 0-1. By default glm::perspective(...) produces a perspective 
+// transform for OpenGL, and as such the final Z range is -1 to +1. Vulkan needs 0 to +1. GLM can 
+// be told to do that with this #define.
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#include <glm/gtc/matrix_transform.hpp>
+
+#include <chrono>
 #include <iostream>
 #include <sstream>      // for format-capable stringstream
 #include <iomanip>      // for std::setfill(...) and std::setw(...)
@@ -33,7 +40,7 @@ Description:
 Creator:    John Cox, 12/2018
 -------------------------------------------------------------------------------------------------*/
 struct Vertex {
-    glm::vec2 pos;
+    glm::vec3 pos;
     glm::vec3 color;
     glm::vec2 texCoord;
 
@@ -56,7 +63,7 @@ struct Vertex {
         // "pos" hijacks the color format enum to say "two 32bit floats"
         attributeDescriptions.at(0).binding = VERTEX_BUFFER_BINDING_LOCATION;
         attributeDescriptions.at(0).location = 0;
-        attributeDescriptions.at(0).format = VK_FORMAT_R32G32_SFLOAT;
+        attributeDescriptions.at(0).format = VK_FORMAT_R32G32B32_SFLOAT;
         attributeDescriptions.at(0).offset = offsetof(Vertex, pos);
 
         attributeDescriptions.at(1).binding = VERTEX_BUFFER_BINDING_LOCATION;
@@ -92,15 +99,15 @@ Description:
 Creator:    John Cox, 12/2018
 -------------------------------------------------------------------------------------------------*/
 const std::vector<Vertex> gVertexValues = {
-    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-    {{+0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-    {{+0.5f, +0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-    {{-0.5f, +0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
+    {{-0.5f, -0.5f, +0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+    {{+0.5f, -0.5f, +0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+    {{+0.5f, +0.5f, +0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+    {{-0.5f, +0.5f, +0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
 
-    //{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-    //{{-0.5f, +0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
-    //{{+0.5f, +0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-    //{{+0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+    {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+    {{+0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+    {{+0.5f, +0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+    {{-0.5f, +0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
 };
 
 /*-------------------------------------------------------------------------------------------------
@@ -111,8 +118,8 @@ Description:
 Creator:    John Cox, 12/2018
 -------------------------------------------------------------------------------------------------*/
 const std::vector<uint16_t> gVertexIndices = {
-    0,1,2,
-    2,3,0,
+    0,1,2,2,3,0,
+    4,5,6,6,7,4,
 };
 
 /*-------------------------------------------------------------------------------------------------
@@ -245,6 +252,9 @@ private:
     VkImageView mTextureImageView = VK_NULL_HANDLE;
     VkDeviceMemory mTextureImageMemory = VK_NULL_HANDLE;
     VkSampler mTextureSampler = VK_NULL_HANDLE;
+    VkImage mDepthImage = VK_NULL_HANDLE;
+    VkDeviceMemory mDepthImageMemory = VK_NULL_HANDLE;
+    VkImageView mDepthImageView = VK_NULL_HANDLE;
 
 
     const std::vector<const char *> mRequiredDeviceExtensions{
@@ -953,7 +963,7 @@ private:
         // with simple intensity values, or it could simply be a finished array of pixel colors.
         mSwapChainImageViews.resize(swapChainImages.size());
         for (size_t i = 0; i < swapChainImages.size(); i++) {
-            mSwapChainImageViews.at(i) = CreateImageView(swapChainImages.at(i), mSwapChainImageFormat);
+            mSwapChainImageViews.at(i) = CreateImageView(swapChainImages.at(i), mSwapChainImageFormat, VK_IMAGE_ASPECT_COLOR_BIT);
         }
     }
 
@@ -964,10 +974,16 @@ private:
     Creator:    John Cox, 12/2018
     ---------------------------------------------------------------------------------------------*/
     void CleanupSwapChain() {
+        // not necessary to destroy in reverse order of creation since they are all created off 
+        // the logical device and will not complain when destroyed out of order unless the logical 
+        // device is destroyed first, but I'm doing it anyway because it looks orderly
+        vkFreeCommandBuffers(mLogicalDevice, mCommandPool, static_cast<uint32_t>(mCommandBuffers.size()), mCommandBuffers.data());
         for (auto &framebuffer : mSwapChainFramebuffers) {
             vkDestroyFramebuffer(mLogicalDevice, framebuffer, nullptr);
         }
-        vkFreeCommandBuffers(mLogicalDevice, mCommandPool, static_cast<uint32_t>(mCommandBuffers.size()), mCommandBuffers.data());
+        vkDestroyImageView(mLogicalDevice, mDepthImageView, nullptr);
+        vkDestroyImage(mLogicalDevice, mDepthImage, nullptr);
+        vkFreeMemory(mLogicalDevice, mDepthImageMemory, nullptr);
         vkDestroyPipeline(mLogicalDevice, mGraphicsPipeline, nullptr);
         vkDestroyPipelineLayout(mLogicalDevice, mPipelineLayout, nullptr);
         vkDestroyRenderPass(mLogicalDevice, mRenderPass, nullptr);
@@ -1000,6 +1016,7 @@ private:
         CreateRenderPass();
         // Note: Not recreating the descriptor set layout because those are independent of image.
         CreateGraphicsPipeline();
+        CreateDepthResources();
         CreateFramebuffers();
         CreateCommandBuffers();
     }
@@ -1012,7 +1029,7 @@ private:
         image view.
     Creator:    John Cox, 11/2018
     ---------------------------------------------------------------------------------------------*/
-    VkImageView CreateImageView(VkImage image, VkFormat format) {
+    VkImageView CreateImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags) {
         VkImageViewCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
         createInfo.image = image;
@@ -1030,8 +1047,8 @@ private:
         createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
         createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
 
-        // image is used for color, no mip mapping, and 1 layer (stereoscopic 3D needs 2 layers (??I think??))
-        createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        // no mip mapping, and 1 layer (stereoscopic 3D needs 2 layers (??I think??))
+        createInfo.subresourceRange.aspectMask = aspectFlags;
         createInfo.subresourceRange.baseMipLevel = 0;
         createInfo.subresourceRange.levelCount = 1;
         createInfo.subresourceRange.baseArrayLayer = 0;
@@ -1075,29 +1092,52 @@ private:
         colorAttachmentDesc.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;  // don't know, don't care
         colorAttachmentDesc.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-        // "Every subpass references one or more of the attachments that we've described using the 
-        // structure in the previous sections."
+        VkAttachmentDescription depthAttachmentDesc{};
+        depthAttachmentDesc.format = FindDepthFormat();
+        depthAttachmentDesc.samples = VK_SAMPLE_COUNT_1_BIT;
+        depthAttachmentDesc.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depthAttachmentDesc.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depthAttachmentDesc.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        depthAttachmentDesc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depthAttachmentDesc.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        depthAttachmentDesc.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+        std::array<VkAttachmentDescription, 2> attachments = { colorAttachmentDesc, depthAttachmentDesc };
+
+        // Note: The render pass' create info specifies all the attachments that will be available 
+        // during it. Each subpass description only specifies references though, and it does this 
+        // through indexing.
+        // Also Note: This index is the same as the "layout(location=0/location=1/etc.)" in the 
+        // shaders that are in use during this render pass.
         VkAttachmentReference colorAttachmentRef{};
         colorAttachmentRef.attachment = 0;  // index into attachment descriptions array
         colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-        //??multiple attachments in a single subpass??
-        // Note: "The index of the attachment in this array is directly referenced form the 
-        // fragment shader with `layout(location=0) out vec4 outColor`."
-        //??what? tinker with this once you can draw something??
+        VkAttachmentReference depthAttachmentRef{};
+        depthAttachmentRef.attachment = 1;
+        depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+        // Note: There is a "count" for the color attachments but not for the depth because a 
+        // shader that is used within a subpass may be designed to read from/write to (??I think 
+        // multiple write??) multiple color attachments, hence the need for a count, but cannot be 
+        // designed to read from/write to more than one depth attachment because it is assumed 
+        // that the depth attachment is relevant only to the current image under construction, and 
+        // so there would be no need to check any other image's depth data. (??I think??)
         VkSubpassDescription subpass{};
         subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
         subpass.colorAttachmentCount = 1;
         subpass.pColorAttachments = &colorAttachmentRef;
+        subpass.pDepthStencilAttachment = &depthAttachmentRef;
 
         // Note: There is an implit "subpass" that occurs at the start of the pipeline and another 
         // at the end. There may not be an image available yet by the time the command buffer 
         // pipeline is ready to execute. Insert a subpass dependency to make sure that this 
-        // implicit subpass doesn't begin prematurely.
-        //??what? are you sure this is correct??
+        // implicit subpass doesn't begin prematurely. In other words, specify that all other 
+        // subpasses must finish before beginning subpass 0 (index 0 indicating our one (and only) 
+        // subpass).
         VkSubpassDependency dependency{};
-        dependency.srcSubpass = VK_SUBPASS_EXTERNAL;    // "external" meaning the implict subpasses
-        dependency.dstSubpass = 0;  // index 0 indicates our subpass (the only one right now)
+        dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+        dependency.dstSubpass = 0;
         dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         dependency.srcAccessMask = 0;
         dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -1106,8 +1146,8 @@ private:
         // finally, make the render pass object itself
         VkRenderPassCreateInfo renderPassCreateInfo{};
         renderPassCreateInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-        renderPassCreateInfo.attachmentCount = 1;
-        renderPassCreateInfo.pAttachments = &colorAttachmentDesc;
+        renderPassCreateInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+        renderPassCreateInfo.pAttachments = attachments.data();
         renderPassCreateInfo.subpassCount = 1;
         renderPassCreateInfo.pSubpasses = &subpass;
         renderPassCreateInfo.dependencyCount = 1;
@@ -1220,7 +1260,7 @@ private:
             things like texture coordinates and normals for lighting. This stage is PROGRAMMABLE.
         - The color blending stage applies operations to mix different fragments that map to the
             same pixel in the framebuffer. Fragments can simply overwrite each other, add up or be
-            mixed based upon transparency. This stage is FIXED.
+            mixed based upon transparency. This stage is FIXED (??is it configurable??)
     Creator:    John Cox, 11/2018
     ---------------------------------------------------------------------------------------------*/
     void CreateGraphicsPipeline() {
@@ -1370,6 +1410,25 @@ private:
             throw std::runtime_error("failed to create pipeline layout");
         }
 
+        // need to tell the pipeline to use depth testing
+        // Note: Depth testing says to compare depth of a new fragment with the existing depth in 
+        // the buffer for that pixel. Depth writing means to write the new depth if the new 
+        // fragment is closer to the screen (could be altered by the "compare op", but let's not 
+        // mess with normality). The former we always want (unless we are doing something very 
+        // odd), but we don't want the latter if we are drawing a transparent object. It would 
+        // require another pipeline (all these things get baked into the pipeline, so even minor 
+        // changes require another pipeline) to perform depth writing for previously compared 
+        // fragments for opaque objects, but if the current pipeline is trying to draw transparent 
+        // objects, then we *don't* want to write new depth tests. Right now (1/20/2019) though, 
+        // for this tutorial, we do.
+        VkPipelineDepthStencilStateCreateInfo depthStencilCreateInfo{};
+        depthStencilCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+        depthStencilCreateInfo.depthTestEnable = VK_TRUE;
+        depthStencilCreateInfo.depthWriteEnable = VK_TRUE;
+        depthStencilCreateInfo.depthCompareOp = VK_COMPARE_OP_LESS;
+        depthStencilCreateInfo.depthBoundsTestEnable = VK_FALSE;    //??what??
+        depthStencilCreateInfo.stencilTestEnable = VK_FALSE;        //??what is this??
+
         VkGraphicsPipelineCreateInfo pipelineCreateInfo{};
         pipelineCreateInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
         pipelineCreateInfo.stageCount = 2;
@@ -1382,8 +1441,9 @@ private:
         pipelineCreateInfo.pColorBlendState = &colorBlendCreateInfo;
         pipelineCreateInfo.layout = mPipelineLayout;
         pipelineCreateInfo.renderPass = mRenderPass;
-        pipelineCreateInfo.subpass = 0;
+        pipelineCreateInfo.subpass = 0; // index of the subpass in the given render pass where this pipeline will be used (??what??)
         pipelineCreateInfo.basePipelineHandle = VK_NULL_HANDLE; // not deriving from existing pipeline
+        pipelineCreateInfo.pDepthStencilState = &depthStencilCreateInfo;
 
         VkPipelineCache pipelineCache = VK_NULL_HANDLE;
         uint32_t pipelineCreateInfoCount = 1;
@@ -1406,14 +1466,22 @@ private:
     void CreateFramebuffers() {
         mSwapChainFramebuffers.resize(mSwapChainImageViews.size());
         for (size_t i = 0; i < mSwapChainImageViews.size(); i++) {
-            VkImageView attachments[] = {
-                mSwapChainImageViews.at(i)
+            std::array<VkImageView, 2> attachments {
+                mSwapChainImageViews.at(i),
+
+                // Note: The drawing waits for all items in the Color Attachment pipeline stage to 
+                // finish before moving on, so our semaphores may be unnecessary with this 
+                // particular design (??you sure??), and as a side effect we can use the same 
+                // depth image view for every frame instead of having to do one depth image for 
+                // each frame. Personally, I think that this is flimsly justification to avoid 
+                // creating extra images. I want a better explanation (??but how do I get one??)
+                mDepthImageView,
             };
             VkFramebufferCreateInfo frameBufferCreateInfo{};
             frameBufferCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
             frameBufferCreateInfo.renderPass = mRenderPass;
-            frameBufferCreateInfo.attachmentCount = 1;
-            frameBufferCreateInfo.pAttachments = attachments;
+            frameBufferCreateInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+            frameBufferCreateInfo.pAttachments = attachments.data();
             frameBufferCreateInfo.width = mSwapChainExtent.width;
             frameBufferCreateInfo.height = mSwapChainExtent.height;
             frameBufferCreateInfo.layers = 1;
@@ -1497,8 +1565,6 @@ private:
     Creator:    John Cox, 01/2019
     ---------------------------------------------------------------------------------------------*/
     void TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout currentLayout, VkImageLayout newLayout) {
-        VkCommandBuffer commandBuffer = BeginSingleUseCommandBuffer();
-
         VkImageMemoryBarrier barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
         barrier.oldLayout = currentLayout;
@@ -1506,18 +1572,30 @@ private:
         barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;  // exclusive to graphics queue right now (1/1/2019)
         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.image = image;
-        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;    // ??color "aspect"??
+
+        if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+            barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+
+            // TODO: remove "format" argument, replace with "aspect bitmask"
+            if (HasStencilComponent(format)) {
+                barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+            }
+        }
+        else {
+            barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        }
+
         barrier.subresourceRange.baseMipLevel = 0;      // no mipmapping right now (1/1/2019)
         barrier.subresourceRange.levelCount = 1;
         barrier.subresourceRange.baseArrayLayer = 0;    // not an array right now (1/1/2019)
         barrier.subresourceRange.layerCount = 1;
-        barrier.srcAccessMask = 0;  // TODO
-        barrier.dstAccessMask = 0;  // TODO
         
-        VkPipelineStageFlags srcStageMask = 0;  // TODO
-        VkPipelineStageFlags dstStageMask = 0;  // TODO
+        // all work specified in the "source" stage must complete before any work is performed in 
+        // the "destination" stage
+        VkPipelineStageFlags srcStageMask = 0;
+        VkPipelineStageFlags dstStageMask = 0;
         if (currentLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
-            barrier.srcAccessMask = 0;
+            barrier.srcAccessMask = 0;  // because VkAccessFlagBits enum has no 0 value
             barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
             srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
             dstStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
@@ -1528,9 +1606,21 @@ private:
             srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
             dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
         }
+        else if (currentLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+            // Note: Depth buffer reading occurs in the early fragment tests and writing will 
+            // occur in the late fragment tests. Of these two requirements, pick the one that 
+            // needs to be available earlier, and then you will be gauranteed that the latter 
+            // requirement will certainly be available on time.
+            barrier.srcAccessMask = 0;
+            barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+            srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+            dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        }
         else {
             throw std::invalid_argument("unsupported layout transition");
         }
+
+        VkCommandBuffer commandBuffer = BeginSingleUseCommandBuffer();
 
         VkDependencyFlags dependencies = 0; // VkDependencyFlagBits::VK_DEPENDENCY_BY_REGION_BIT (supposedly, the reading stage is allowed to do so from writes that have already finished, even though the whole write has not...nifty)
         uint32_t memoryBarrierCount = 0;
@@ -1560,6 +1650,11 @@ private:
         If we have lots of textures, then we will have lots of standalone images, and many will 
         not share the same extent. Thus we need to specify the extent for each and every texture 
         image.
+
+
+        TODO: split into two functions, one that creates a VkImage, the other which allocates VkDeviceMemory, or better yet, a class that does this for you and that handles cleanup
+
+
     Creator:    John Cox, 01/2019
     ---------------------------------------------------------------------------------------------*/
     void CreateImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags memProperties, VkImage &image, VkDeviceMemory &imageMemory) {
@@ -1577,24 +1672,82 @@ private:
         imageCreateInfo.usage = usage;
         imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         imageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-        if (vkCreateImage(mLogicalDevice, &imageCreateInfo, nullptr, &mTextureImage) != VK_SUCCESS) {
+        if (vkCreateImage(mLogicalDevice, &imageCreateInfo, nullptr, &image) != VK_SUCCESS) {
             throw std::runtime_error("failed to create image for texture");
         }
 
         // now allocate memory for the image
         VkMemoryRequirements memRequirements{};
-        vkGetImageMemoryRequirements(mLogicalDevice, mTextureImage, &memRequirements);
+        vkGetImageMemoryRequirements(mLogicalDevice, image, &memRequirements);
 
         VkMemoryAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         allocInfo.allocationSize = memRequirements.size;
         allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, memProperties);
-        if (vkAllocateMemory(mLogicalDevice, &allocInfo, nullptr, &mTextureImageMemory) != VK_SUCCESS) {
+        if (vkAllocateMemory(mLogicalDevice, &allocInfo, nullptr, &imageMemory) != VK_SUCCESS) {
             throw std::runtime_error("failed to allocate image memory");
         }
 
         VkDeviceSize offset = 0;
-        vkBindImageMemory(mLogicalDevice, mTextureImage, mTextureImageMemory, offset);
+        vkBindImageMemory(mLogicalDevice, image, imageMemory, offset);
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        ??what??
+    Creator:    John Cox, 01/2019
+    ---------------------------------------------------------------------------------------------*/
+    VkFormat FindSupportedFormat(const std::vector<VkFormat> &candidates, VkImageTiling tiling, VkFormatFeatureFlags features) {
+        for (const VkFormat &format : candidates) {
+            VkFormatProperties props {};
+            vkGetPhysicalDeviceFormatProperties(mPhysicalDevice, format, &props);
+
+            if (tiling == VK_IMAGE_TILING_LINEAR && 
+                (props.linearTilingFeatures & features) == features) {
+                return format;
+            }
+            else if (tiling == VK_IMAGE_TILING_OPTIMAL &&
+                (props.optimalTilingFeatures & features) == features) {
+                return format;
+            }
+        }
+
+        throw std::runtime_error("failed to find supported format");    //??wat??
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        ??again, what??
+    Creator:    John Cox, 01/2019
+    ---------------------------------------------------------------------------------------------*/
+    VkFormat FindDepthFormat() {
+        return FindSupportedFormat(
+            { VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT },
+            VK_IMAGE_TILING_OPTIMAL,
+            VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
+        );
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        ??yet again, what??
+    Creator:    John Cox, 01/2019
+    ---------------------------------------------------------------------------------------------*/
+    bool HasStencilComponent(VkFormat format) {
+        return format == VK_FORMAT_D32_SFLOAT_S8_UINT || 
+            format == VK_FORMAT_D24_UNORM_S8_UINT;
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        ??
+    Creator:    John Cox, 01/2019
+    ---------------------------------------------------------------------------------------------*/
+    void CreateDepthResources() {
+        VkFormat depthFormat = FindDepthFormat();
+        CreateImage(mSwapChainExtent.width, mSwapChainExtent.height, depthFormat, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, mDepthImage, mDepthImageMemory);
+        mDepthImageView = CreateImageView(mDepthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
+        TransitionImageLayout(mDepthImage, depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -1668,7 +1821,7 @@ private:
         TransitionImageLayout(mTextureImage, imageFormat, currentLayout, destLayout);
 
         // lastly, create a view for the new image
-        mTextureImageView = CreateImageView(mTextureImage, VK_FORMAT_R8G8B8A8_UNORM);
+        mTextureImageView = CreateImageView(mTextureImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
 
         // cleanup
         vkDestroyBuffer(mLogicalDevice, stagingBuffer, nullptr);
@@ -2121,10 +2274,18 @@ private:
             renderPassBeginInfo.renderArea.offset = { 0, 0 };
             renderPassBeginInfo.renderArea.extent = mSwapChainExtent;
 
-            // defines the colors for the color attachment's .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR
-            VkClearValue clearColor = { 0.0, 0.0f, 0.0f, 1.0f };
-            renderPassBeginInfo.clearValueCount = 1;
-            renderPassBeginInfo.pClearValues = &clearColor;
+            // defines the colors for the color and depth attachments' .loadOp = 
+            // VK_ATTACHMENT_LOAD_OP_CLEAR
+            // Note: For depth, clear to 1.0f because closer to 0 (as long as it is between 0-1) 
+            // take precedence, so if we were to clear the depth to 0 (closest possible value), 
+            // then the cleared color would be all that we would see. 
+            // Also Note: The second depth clear value is "stencil", which is not in yse right now 
+            // (1/20/2019).
+            std::array<VkClearValue, 2> clearValues{};
+            clearValues.at(0).color = { 0.0, 0.0f, 0.0f, 1.0f };
+            clearValues.at(1).depthStencil = { 1.0f, 0 };
+            renderPassBeginInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+            renderPassBeginInfo.pClearValues = clearValues.data();
 
             vkCmdBeginRenderPass(currentCommandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
             {
@@ -2243,8 +2404,9 @@ private:
         CreateRenderPass();
         CreateDescriptorSetLayout();
         CreateGraphicsPipeline();
-        CreateFramebuffers();
         CreateCommandPool();
+        CreateDepthResources();
+        CreateFramebuffers();
         CreateTextureImage();
         CreateTextureSampler();
         CreateVertexBuffer();
@@ -2296,7 +2458,7 @@ private:
         // Note: If the screen was resized and the swap chain had to be recreated, this 
         // calculation will use the latest values, and so RecreateSwapChain(...) doesn't have to 
         // handle that.
-        // Also Note: We could make it do that because the perspective projection (that is, the 
+        // Also Note: We *could* make it do that because the perspective projection (that is, the 
         // camera->projection transform) is constant for a given screen size, but we aren't 
         // because then we'd have to split the UBO population between this function and that 
         // function, and that would be a bit of an encapsulation pain.

@@ -6,8 +6,8 @@
 :: -V tells the compiler to create SPIR-V binaries for Vulkan.
 :: -G tells the compiler to create SPIR-V binaries for OpenGL. (ignored; we're using Vulkan)
 :: -o path/to/output/file.whatevs to use non-default naming.
-C:\ThirdParty\VulkanSDK\1.1.85.0\Bin32\glslangValidator.exe -H -V triangle.vert
-C:\ThirdParty\VulkanSDK\1.1.85.0\Bin32\glslangValidator.exe -H -V triangle.frag
+C:\ThirdParty\VulkanSDK\1.1.85.0\Bin32\glslangValidator.exe -V triangle.vert
+C:\ThirdParty\VulkanSDK\1.1.85.0\Bin32\glslangValidator.exe -V triangle.frag
 
 :: pause so that we can read the console output
 pause
