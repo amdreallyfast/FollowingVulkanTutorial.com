@@ -9,6 +9,9 @@
 #include <glm/vec3.hpp>
 #include <glm/mat4x4.hpp>
 
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/hash.hpp>
+
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 
@@ -30,6 +33,7 @@
 #include <set>          // for eliminating potentially duplicate stuff from multiple objects
 #include <optional>     // for return values that may not exist
 #include <algorithm>    // std::min/max
+#include <unordered_map>
 
 #include <fstream>      // for loading shader binaries
 #include <streambuf>    // for loading shader binaries
@@ -81,7 +85,36 @@ struct Vertex {
 
         return attributeDescriptions;
     }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
+        Used to avoid the duplication of vertices when loading the model into memory.
+    Creator:    John Cox, 02/2019
+    ---------------------------------------------------------------------------------------------*/
+    bool operator==(const Vertex &other) const {
+        return pos == other.pos 
+            && color == other.color 
+            && texCoord == other.texCoord;
+    }
 };
+
+/*-------------------------------------------------------------------------------------------------
+Description:
+    We want to avoid using duplicates, so we will be using a std::unordered_map<...> to track 
+    which vertices we've already used. In order to use a Vertex instance as a key though, we need 
+    to define a hash function for it in this way. As a consequence, this hashing *cannot* be moved 
+    into Vertex as a method if we still want to use the Vertex object as a key to a map. 
+Creator:    John Cox, 02/2019
+-------------------------------------------------------------------------------------------------*/
+namespace std {
+    template<> struct hash<Vertex> {
+        size_t operator()(Vertex const &v) const {
+            return ((hash<glm::vec3>()(v.pos) ^
+                (hash<glm::vec3>()(v.color) << 1)) >> 1) ^
+                (hash<glm::vec2>()(v.texCoord) << 1);
+        }
+    };
+}
 
 /*-------------------------------------------------------------------------------------------------
 Description:
@@ -1866,23 +1899,34 @@ private:
             std::cout << "shape name: " << s.name << std::endl;
             std::cout << "shape mesh face count: " << s.mesh.num_face_vertices.size() << std::endl;
 
-            // assuming for now that every vertex is unique (??does it matter??)
+            // there are some duplicate vertices in this mesh that we'll want to trim out
+            // Note: The whole point of using vertex indices is to avoid duplicating vertices. An 
+            // index is cheap to copy. A vertex much less so. There are 1/2 million faces in this 
+            // model, ~700k vertices extracted (but only ~260k unique ones), and 1.5 million 
+            // indices. Definitely want to avoid duplicating vertices when this much memory is at 
+            // stake.
+            std::unordered_map<Vertex, uint32_t> uniqueVertexIndices{};
+
             for (const auto &i : s.mesh.indices) {
                 Vertex v{};
                 v.pos = {
-                    attrib.vertices[3 * i.vertex_index + 0],
-                    attrib.vertices[3 * i.vertex_index + 1],
-                    attrib.vertices[3 * i.vertex_index + 2],
+                    attrib.vertices[(3 * i.vertex_index) + 0],
+                    attrib.vertices[(3 * i.vertex_index) + 1],
+                    attrib.vertices[(3 * i.vertex_index) + 2],
                 };
                 v.texCoord = {
-                    attrib.texcoords[2 * i.texcoord_index + 0],
-                    1.0f - attrib.texcoords[2 * i.texcoord_index + 1],
+                    attrib.texcoords[(2 * i.texcoord_index) + 0],
+                    1.0f - attrib.texcoords[(2 * i.texcoord_index) + 1],
                 };
                 v.color = { 1.0f, 1.0f, 1.0f };
 
-                // push back the vertex and it's current index (crude indexing for now)
-                mVertexes.push_back(v);
-                mVertexIndices.push_back(static_cast<uint32_t>(mVertexIndices.size()));
+                if (uniqueVertexIndices.count(v) == 0) {
+                    // haven't seen this before, so store the current vertex index
+                    uniqueVertexIndices[v] = static_cast<uint32_t>(mVertexes.size());
+                    mVertexes.push_back(v);
+                }
+
+                mVertexIndices.push_back(uniqueVertexIndices.at(v));
             }
         }
 
