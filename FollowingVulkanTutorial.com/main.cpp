@@ -9,6 +9,8 @@
 #include <glm/vec3.hpp>
 #include <glm/mat4x4.hpp>
 
+#include <tiny_obj_loader.h>
+
 // by default GLM understands angle arguments to matrix transform generation as degrees
 #define GLM_FORCE_RADIANS
 
@@ -1765,7 +1767,8 @@ private:
         int tHeight = 0;
         int numActualChannels = 0;
         int requestedComposition = STBI_rgb_alpha;
-        stbi_uc *pixels = stbi_load("textures/statue.jpg", &tWidth, &tHeight, &numActualChannels, STBI_rgb_alpha);
+        /*stbi_uc *pixels = stbi_load("textures/statue.jpg", &tWidth, &tHeight, &numActualChannels, STBI_rgb_alpha);*/
+        stbi_uc *pixels = stbi_load("textures/chalet.jpg", &tWidth, &tHeight, &numActualChannels, STBI_rgb_alpha);
 
         // Note: We requested the image with RGBA, so even if it doesn't actually have 4 channels, 
         // we'll get a 4-channel image (alpha expected to be 0), so we should allocate space for 

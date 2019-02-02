@@ -70,19 +70,19 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <IncludePath>C:\ThirdParty\VulkanSDK\1.1.85.0\Include;C:\ThirdParty\glfw\glfw-3.2.1.bin.WIN64\include;C:\ThirdParty\glm-0.9.9.2;C:\ThirdParty\stb-master;$(IncludePath)</IncludePath>
+    <IncludePath>C:\ThirdParty\VulkanSDK\1.1.85.0\Include;C:\ThirdParty\glfw\glfw-3.2.1.bin.WIN64\include;C:\ThirdParty\glm-0.9.9.2;C:\ThirdParty\stb-master;C:\ThirdParty\tinyobjloader-master;$(IncludePath)</IncludePath>
     <LibraryPath>C:\ThirdParty\VulkanSDK\1.1.85.0\Lib32;C:\ThirdParty\glfw\glfw-3.2.1.bin.WIN32\lib-vc2015;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>C:\ThirdParty\VulkanSDK\1.1.85.0\Include;C:\ThirdParty\glfw\glfw-3.2.1.bin.WIN64\include;C:\ThirdParty\glm-0.9.9.2;C:\ThirdParty\stb-master;$(IncludePath)</IncludePath>
+    <IncludePath>C:\ThirdParty\VulkanSDK\1.1.85.0\Include;C:\ThirdParty\glfw\glfw-3.2.1.bin.WIN64\include;C:\ThirdParty\glm-0.9.9.2;C:\ThirdParty\stb-master;C:\ThirdParty\tinyobjloader-master;$(IncludePath)</IncludePath>
     <LibraryPath>C:\ThirdParty\VulkanSDK\1.1.85.0\Lib;C:\ThirdParty\glfw\glfw-3.2.1.bin.WIN64\lib-vc2015;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-    <IncludePath>C:\ThirdParty\VulkanSDK\1.1.85.0\Include;C:\ThirdParty\glfw\glfw-3.2.1.bin.WIN64\include;C:\ThirdParty\glm-0.9.9.2;C:\ThirdParty\stb-master;$(IncludePath)</IncludePath>
+    <IncludePath>C:\ThirdParty\VulkanSDK\1.1.85.0\Include;C:\ThirdParty\glfw\glfw-3.2.1.bin.WIN64\include;C:\ThirdParty\glm-0.9.9.2;C:\ThirdParty\stb-master;C:\ThirdParty\tinyobjloader-master;$(IncludePath)</IncludePath>
     <LibraryPath>C:\ThirdParty\VulkanSDK\1.1.85.0\Lib32;C:\ThirdParty\glfw\glfw-3.2.1.bin.WIN32\lib-vc2015;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <IncludePath>C:\ThirdParty\VulkanSDK\1.1.85.0\Include;C:\ThirdParty\glfw\glfw-3.2.1.bin.WIN64\include;C:\ThirdParty\glm-0.9.9.2;C:\ThirdParty\stb-master;$(IncludePath)</IncludePath>
+    <IncludePath>C:\ThirdParty\VulkanSDK\1.1.85.0\Include;C:\ThirdParty\glfw\glfw-3.2.1.bin.WIN64\include;C:\ThirdParty\glm-0.9.9.2;C:\ThirdParty\stb-master;C:\ThirdParty\tinyobjloader-master;$(IncludePath)</IncludePath>
     <LibraryPath>C:\ThirdParty\VulkanSDK\1.1.85.0\Lib;C:\ThirdParty\glfw\glfw-3.2.1.bin.WIN64\lib-vc2015;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">

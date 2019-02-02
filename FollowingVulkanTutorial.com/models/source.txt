@@ -1,0 +1,5 @@
+Original:
+https://sketchfab.com/models/e925320e1d5744d9ae661aeff61e7aef
+
+Tutorial said that it modified the model a bit and provided direct links:
+https://vulkan-tutorial.com/Loading_models
