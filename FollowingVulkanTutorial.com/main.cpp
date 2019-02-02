@@ -9,6 +9,7 @@
 #include <glm/vec3.hpp>
 #include <glm/mat4x4.hpp>
 
+#define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 
 // by default GLM understands angle arguments to matrix transform generation as degrees
@@ -84,48 +85,6 @@ struct Vertex {
 
 /*-------------------------------------------------------------------------------------------------
 Description:
-    In Vulkan, unlike OpenGL, Normalized Device Coordinate (NDC) (-1,-1) is the top left like
-    Direct3D. In OpenGL, NDC (-1,-1) was the bottom left.
-
-    Note: Window coordinates are [0,0] in the top left and [1,1] in the lower right. When 
-    tinkering with these values, be aware of a couple things:
-    1. Clockwise/counterclockwise face culling.
-    2. Where the camera (the "eye") is relative to the triangles. Viewed from one side, three 
-        vertices will be considered a clockwise face, and counterclockwise when viewed from the 
-        other.
-
-    The camera in this tutorial was given an eye at (2,2,2) that looked at (0,0,0) while assuming 
-    that +Z (0,0,1) was up. The projection matrix flipped the Y to make sure the faces remained 
-    counterclockwise. This works, but seems a bit convoluted then just relying on the Vulkan 
-    coordinate system.
-Creator:    John Cox, 12/2018
--------------------------------------------------------------------------------------------------*/
-const std::vector<Vertex> gVertexValues = {
-    {{-0.5f, -0.5f, +0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-    {{+0.5f, -0.5f, +0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-    {{+0.5f, +0.5f, +0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-    {{-0.5f, +0.5f, +0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
-
-    {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-    {{+0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-    {{+0.5f, +0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-    {{-0.5f, +0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
-};
-
-/*-------------------------------------------------------------------------------------------------
-Description:
-    If we have fewer than 65535 (2^16-1) unique vertices, we can save space on indices by using
-    16bit unsigned integers. If we have more than that many unique vertices, then we will have to
-    use 32bit unsigned integer indices.
-Creator:    John Cox, 12/2018
--------------------------------------------------------------------------------------------------*/
-const std::vector<uint16_t> gVertexIndices = {
-    0,1,2,2,3,0,
-    4,5,6,6,7,4,
-};
-
-/*-------------------------------------------------------------------------------------------------
-Description:
     Rather than specify three separate uniforms to bring the transform matrices into the shaders,
     load them all at one time.
 
@@ -137,7 +96,6 @@ struct UniformBufferObject {
     glm::mat4 view;
     glm::mat4 proj;
 };
-
 
 /*-------------------------------------------------------------------------------------------------
 Description:
@@ -242,18 +200,25 @@ private:
     std::vector<VkFence> mInFlightFences;
     size_t mCurrentFrame = 0;
     bool mFrameBufferResized = false;   // not all drivers properly handle window resize notifications in Vulkan
+
+    std::vector<Vertex> mVertexes;
+    std::vector<uint32_t> mVertexIndices;
     VkBuffer mVertexBuffer = VK_NULL_HANDLE;
     VkDeviceMemory mVertexBufferMemory = VK_NULL_HANDLE;
     VkBuffer mVertexIndexBuffer = VK_NULL_HANDLE;
     VkDeviceMemory mVertexIndexBufferMemory = VK_NULL_HANDLE;
+
     std::vector<VkBuffer> mUniformBuffers;
     std::vector<VkDeviceMemory> mUniformBuffersMemory;
+
     VkDescriptorPool mDescriptorPool = VK_NULL_HANDLE;
     std::vector<VkDescriptorSet> mDescriptorSets;
+
     VkImage mTextureImage = VK_NULL_HANDLE;
     VkImageView mTextureImageView = VK_NULL_HANDLE;
     VkDeviceMemory mTextureImageMemory = VK_NULL_HANDLE;
     VkSampler mTextureSampler = VK_NULL_HANDLE;
+
     VkImage mDepthImage = VK_NULL_HANDLE;
     VkDeviceMemory mDepthImageMemory = VK_NULL_HANDLE;
     VkImageView mDepthImageView = VK_NULL_HANDLE;
@@ -1879,6 +1844,53 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
+        Loads the vertices and vertex indexes contained in the object model into vertex storage. 
+    Creator:    John Cox, 02/2019
+    ---------------------------------------------------------------------------------------------*/
+    void LoadModel() {
+        tinyobj::attrib_t attrib;
+        std::vector<tinyobj::shape_t> shapes;
+        std::vector<tinyobj::material_t> materials;
+        std::string warn;
+        std::string err;
+
+        // Note: Faces can contain an arbitrary number of vertices, and we might try to load a 
+        // model that was constructed with, say, quads, but LoadObj has an optional parameter 
+        // "triangulate" and is set to true by default, so we don't need to worry about anything 
+        // except triangles.
+        if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, "models/chalet.obj")) {
+            throw std::runtime_error(warn + err);
+        }
+
+        for (const auto &s : shapes) {
+            std::cout << "shape name: " << s.name << std::endl;
+            std::cout << "shape mesh face count: " << s.mesh.num_face_vertices.size() << std::endl;
+
+            // assuming for now that every vertex is unique (??does it matter??)
+            for (const auto &i : s.mesh.indices) {
+                Vertex v{};
+                v.pos = {
+                    attrib.vertices[3 * i.vertex_index + 0],
+                    attrib.vertices[3 * i.vertex_index + 1],
+                    attrib.vertices[3 * i.vertex_index + 2],
+                };
+                v.texCoord = {
+                    attrib.texcoords[2 * i.texcoord_index + 0],
+                    attrib.texcoords[2 * i.texcoord_index + 1],
+                };
+                v.color = { 1.0f, 1.0f, 1.0f };
+                
+                // push back the vertex and it's current index (crude indexing for now)
+                mVertexes.push_back(v);
+                mVertexIndices.push_back(static_cast<uint32_t>(mVertexIndices.size()));
+            }
+        }
+
+        return;
+    }
+
+    /*---------------------------------------------------------------------------------------------
+    Description:
         Not all memory is created equal. Some is only available on the GPU ("device local"), some
         is visible to the host (the program), some is coherent (immediately copied to a duplicate
         chunk of GPU memory upon writing, though this has system-memory->GPU-memory transfer
@@ -2042,7 +2054,7 @@ private:
     Creator:    John Cox, 12/2018
     ---------------------------------------------------------------------------------------------*/
     void CreateVertexBuffer() {
-        VkDeviceSize bufferSize = sizeof(gVertexValues[0]) * gVertexValues.size();
+        VkDeviceSize bufferSize = sizeof(mVertexes[0]) * mVertexes.size();
 
         VkBufferUsageFlags bufferUsage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
         VkMemoryPropertyFlags memProperties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
@@ -2054,7 +2066,7 @@ private:
         VkDeviceSize offset = 0;
         VkMemoryMapFlags flags = 0;
         vkMapMemory(mLogicalDevice, stagingBufferMemory, offset, bufferSize, flags, &data);
-        memcpy(data, gVertexValues.data(), static_cast<size_t>(bufferSize));
+        memcpy(data, mVertexes.data(), static_cast<size_t>(bufferSize));
         vkUnmapMemory(mLogicalDevice, stagingBufferMemory);
 
         bufferUsage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
@@ -2076,7 +2088,7 @@ private:
     Creator:    John Cox, 12/2018
     ---------------------------------------------------------------------------------------------*/
     void CreateVertexIndexBuffer() {
-        VkDeviceSize bufferSize = sizeof(gVertexIndices[0]) * gVertexIndices.size();
+        VkDeviceSize bufferSize = sizeof(mVertexIndices[0]) * mVertexIndices.size();
 
         VkBufferUsageFlags bufferUsage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
         VkMemoryPropertyFlags memProperties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
@@ -2088,7 +2100,7 @@ private:
         VkDeviceSize offset = 0;
         VkMemoryMapFlags flags = 0;
         vkMapMemory(mLogicalDevice, stagingBufferMemory, offset, bufferSize, flags, &data);
-        memcpy(data, gVertexIndices.data(), static_cast<size_t>(bufferSize));
+        memcpy(data, mVertexIndices.data(), static_cast<size_t>(bufferSize));
         vkUnmapMemory(mLogicalDevice, stagingBufferMemory);
 
         bufferUsage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
@@ -2317,7 +2329,7 @@ private:
                     dynamicOffsetCount,
                     nullptr);
 
-                uint32_t indexCount = static_cast<uint32_t>(gVertexIndices.size());
+                uint32_t indexCount = static_cast<uint32_t>(mVertexIndices.size());
                 uint32_t instanceCount = 1;
                 uint32_t firstIndex = 0;
                 uint32_t vertexOffset = 0;  // you can add a constant offset to the indices (??why would you do that??)
@@ -2412,6 +2424,7 @@ private:
         CreateFramebuffers();
         CreateTextureImage();
         CreateTextureSampler();
+        LoadModel();
         CreateVertexBuffer();
         CreateVertexIndexBuffer();
         CreateUniformBuffers();
