@@ -78,7 +78,7 @@ struct Vertex {
         attributeDescriptions.at(2).location = 2;
         attributeDescriptions.at(2).format = VK_FORMAT_R32G32B32A32_SFLOAT;
         attributeDescriptions.at(2).offset = offsetof(Vertex, texCoord);
-        
+
         return attributeDescriptions;
     }
 };
@@ -990,8 +990,8 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        At this time (1/12/2019) in the tutorial (Textre Mapping: Image view and sampler), the 
-        image view create is mostly the same, so while image creation is special, image view 
+        At this time (1/12/2019) in the tutorial (Textre Mapping: Image view and sampler), the
+        image view create is mostly the same, so while image creation is special, image view
         creation is not. We are not using images for depth, which require a different type of
         image view.
     Creator:    John Cox, 11/2018
@@ -1310,7 +1310,7 @@ private:
         rasterizerCreateInfo.polygonMode = VK_POLYGON_MODE_FILL;    // or LINE or POINT
         rasterizerCreateInfo.lineWidth = 1.0f;  //>1.0f requires enabling "wideLines" GPU feature
         rasterizerCreateInfo.cullMode = VK_CULL_MODE_BACK_BIT;
-        
+
         // changed from `CLOCKWISE` because the GLM project matrix had to have its Y axis flipped 
         // to bring it in line with Vulkan's NDCs
         rasterizerCreateInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
@@ -1433,7 +1433,7 @@ private:
     void CreateFramebuffers() {
         mSwapChainFramebuffers.resize(mSwapChainImageViews.size());
         for (size_t i = 0; i < mSwapChainImageViews.size(); i++) {
-            std::array<VkImageView, 2> attachments {
+            std::array<VkImageView, 2> attachments{
                 mSwapChainImageViews.at(i),
 
                 // Note: The drawing waits for all items in the Color Attachment pipeline stage to 
@@ -1490,8 +1490,8 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        Takes a buffer of data on the GPU and copies it into another chunk of memory that is 
-        reserved for use by a particular image. This is how we get texture data into an image for 
+        Takes a buffer of data on the GPU and copies it into another chunk of memory that is
+        reserved for use by a particular image. This is how we get texture data into an image for
         use as a sampler.
     Creator:    John Cox, 01/2019
     ---------------------------------------------------------------------------------------------*/
@@ -1525,9 +1525,9 @@ private:
     Description:
         Changes the usage of the texture image from ?? to ??.
 
-        Note: We could use VK_IMAGE_LAYOUT_UNDEFINED if we didn't mind the image potentially 
-        getting clobbered (implementation defined whether it does this or not), but we already 
-        used the image as a copy destination and copied the JPEG's pixels to it, so we definitely 
+        Note: We could use VK_IMAGE_LAYOUT_UNDEFINED if we didn't mind the image potentially
+        getting clobbered (implementation defined whether it does this or not), but we already
+        used the image as a copy destination and copied the JPEG's pixels to it, so we definitely
         don't want it clobbered and therefore specify the existing layout.
     Creator:    John Cox, 01/2019
     ---------------------------------------------------------------------------------------------*/
@@ -1556,7 +1556,7 @@ private:
         barrier.subresourceRange.levelCount = 1;
         barrier.subresourceRange.baseArrayLayer = 0;    // not an array right now (1/1/2019)
         barrier.subresourceRange.layerCount = 1;
-        
+
         // all work specified in the "source" stage must complete before any work is performed in 
         // the "destination" stage
         VkPipelineStageFlags srcStageMask = 0;
@@ -1611,11 +1611,11 @@ private:
     /*---------------------------------------------------------------------------------------------
     Description:
         Creates an image that is not part of the swap chain.
-        
-        Note: When creating the swap chain, image extent was specified and applied to every image 
-        that it created. We are now creating a standalone image that is the size of the texture. 
-        If we have lots of textures, then we will have lots of standalone images, and many will 
-        not share the same extent. Thus we need to specify the extent for each and every texture 
+
+        Note: When creating the swap chain, image extent was specified and applied to every image
+        that it created. We are now creating a standalone image that is the size of the texture.
+        If we have lots of textures, then we will have lots of standalone images, and many will
+        not share the same extent. Thus we need to specify the extent for each and every texture
         image.
 
 
@@ -1666,10 +1666,10 @@ private:
     ---------------------------------------------------------------------------------------------*/
     VkFormat FindSupportedFormat(const std::vector<VkFormat> &candidates, VkImageTiling tiling, VkFormatFeatureFlags features) {
         for (const VkFormat &format : candidates) {
-            VkFormatProperties props {};
+            VkFormatProperties props{};
             vkGetPhysicalDeviceFormatProperties(mPhysicalDevice, format, &props);
 
-            if (tiling == VK_IMAGE_TILING_LINEAR && 
+            if (tiling == VK_IMAGE_TILING_LINEAR &&
                 (props.linearTilingFeatures & features) == features) {
                 return format;
             }
@@ -1701,7 +1701,7 @@ private:
     Creator:    John Cox, 01/2019
     ---------------------------------------------------------------------------------------------*/
     bool HasStencilComponent(VkFormat format) {
-        return format == VK_FORMAT_D32_SFLOAT_S8_UINT || 
+        return format == VK_FORMAT_D32_SFLOAT_S8_UINT ||
             format == VK_FORMAT_D24_UNORM_S8_UINT;
     }
 
@@ -1719,8 +1719,8 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        Loads a JPEG into a buffer of pixel data, creates a VkImage for it and allocates memory 
-        for it, copies the pixels into it, then transitions the image for optimal use by the 
+        Loads a JPEG into a buffer of pixel data, creates a VkImage for it and allocates memory
+        for it, copies the pixels into it, then transitions the image for optimal use by the
         shaders.
 
         Stock image:
@@ -1771,7 +1771,7 @@ private:
             imageFormat,
             imageTiling,
             imageUsage,
-            memProperties, 
+            memProperties,
             mTextureImage,
             mTextureImageMemory);
 
@@ -1798,23 +1798,23 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        A texture sampler tells Vulkan how to access the pixels of an image ("an image" indicating 
-        to any image that it is applied to; the sampler itself does not have a link to any image). 
-        If the fragment density exceeds the texel density for a given triangle and texture, and 
-        nothing clever is done but rather the fragment shader just takes the closest pixel, then 
-        the result is blocky and pixelated as a chunk of fragments take on the same texel, and an 
-        adjacent chunk of fragments take on the adjacent text. This is called "oversampling", and 
+        A texture sampler tells Vulkan how to access the pixels of an image ("an image" indicating
+        to any image that it is applied to; the sampler itself does not have a link to any image).
+        If the fragment density exceeds the texel density for a given triangle and texture, and
+        nothing clever is done but rather the fragment shader just takes the closest pixel, then
+        the result is blocky and pixelated as a chunk of fragments take on the same texel, and an
+        adjacent chunk of fragments take on the adjacent text. This is called "oversampling", and
         can be seen with low-res textures up close.
-        
-        On the flip side (that is, the fragment density is less than the texel density), adjacent 
-        fragments will take on non-adjacent texels, and the result is blurry. This is called 
+
+        On the flip side (that is, the fragment density is less than the texel density), adjacent
+        fragments will take on non-adjacent texels, and the result is blurry. This is called
         "undersampling", and can be seen with hi-res textures at a distance.
 
-        A sampler can specify filtering techniques and how to handle texel coordinate requests 
-        that are outside the border of the texture (repeat for a tiled image, mirrored repeat, 
+        A sampler can specify filtering techniques and how to handle texel coordinate requests
+        that are outside the border of the texture (repeat for a tiled image, mirrored repeat,
         clamping).
 
-        Note: "Minification" is the process of dealing with oversampling, and "magnification" is 
+        Note: "Minification" is the process of dealing with oversampling, and "magnification" is
         the process of dealing with undersampling.
     Creator:    John Cox, 01/2019
     ---------------------------------------------------------------------------------------------*/
@@ -1844,7 +1844,7 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        Loads the vertices and vertex indexes contained in the object model into vertex storage. 
+        Loads the vertices and vertex indexes contained in the object model into vertex storage.
     Creator:    John Cox, 02/2019
     ---------------------------------------------------------------------------------------------*/
     void LoadModel() {
@@ -1879,7 +1879,7 @@ private:
                     attrib.texcoords[2 * i.texcoord_index + 1],
                 };
                 v.color = { 1.0f, 1.0f, 1.0f };
-                
+
                 // push back the vertex and it's current index (crude indexing for now)
                 mVertexes.push_back(v);
                 mVertexIndices.push_back(static_cast<uint32_t>(mVertexIndices.size()));
@@ -1992,8 +1992,8 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        With not only vertex buffers needing copying but also texture images needing initial 
-        processing, this common code for the beginning of a one-time command buffer was broken 
+        With not only vertex buffers needing copying but also texture images needing initial
+        processing, this common code for the beginning of a one-time command buffer was broken
         into two dedicated functions to prevent copying.
     Creator:    John Cox, 01/2019
     ---------------------------------------------------------------------------------------------*/
@@ -2139,11 +2139,11 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        For this tutorial at this stage (Texture mapping: Combined image sampler), we will 
+        For this tutorial at this stage (Texture mapping: Combined image sampler), we will
         allocate a UBO and a sampler for each possible frame.
-        
-        Note: We could do fewer than the swap chain image size, but then we might run out, and 
-        allocating more will leave some of them unused, and these things are cheap little 
+
+        Note: We could do fewer than the swap chain image size, but then we might run out, and
+        allocating more will leave some of them unused, and these things are cheap little
         structures anyway, so just allocate 1 for each frame.
     Creator:    John Cox, 01/2019
     ---------------------------------------------------------------------------------------------*/
@@ -2174,14 +2174,14 @@ private:
     /*---------------------------------------------------------------------------------------------
     Description:
         A descriptor is something like a uniform or an image sampler. The descriptor (shorthand
-        for "data descriptor") tells Vulkan where this information is coming from. Info on 
-        individual descriptors is generalized in the descriptor set layout setup and given exact 
+        for "data descriptor") tells Vulkan where this information is coming from. Info on
+        individual descriptors is generalized in the descriptor set layout setup and given exact
         info here via VkDescriptorBufferInfo (or VkDescriptorImageInfo, or others).
 
-        Note: The designers of Vulkan did not expect users to have only one descriptor in their 
-        shaders (not most of the time, at least), so we do not see a VkDescriptor structure, 
-        instead only seeing VkDescriptorSet, indicating possibility for multiple descriptors. When 
-        you only have one descriptor, such as in this tutorial prior to image sampling, then the 
+        Note: The designers of Vulkan did not expect users to have only one descriptor in their
+        shaders (not most of the time, at least), so we do not see a VkDescriptor structure,
+        instead only seeing VkDescriptorSet, indicating possibility for multiple descriptors. When
+        you only have one descriptor, such as in this tutorial prior to image sampling, then the
         set is size 1 and the plural terminology is confusing.
     Creator:    John Cox, 01/2019
     ---------------------------------------------------------------------------------------------*/
@@ -2214,7 +2214,7 @@ private:
             // Note: The layout is the same value used when transitioning the texture image after 
             // copying.
             VkDescriptorImageInfo imageInfo{};
-            imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; 
+            imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             imageInfo.imageView = mTextureImageView;
             imageInfo.sampler = mTextureSampler;
 
@@ -2314,7 +2314,7 @@ private:
                 vkCmdBindVertexBuffers(currentCommandBuffer, firstBindingIndex, bindingCounter, vertexBuffers, offsets);
 
                 VkDeviceSize offset = 0;
-                vkCmdBindIndexBuffer(currentCommandBuffer, mVertexIndexBuffer, offset, VK_INDEX_TYPE_UINT16);
+                vkCmdBindIndexBuffer(currentCommandBuffer, mVertexIndexBuffer, offset, VK_INDEX_TYPE_UINT32);
 
                 uint32_t firstDescriptorSetIndex = 0;
                 uint32_t descriptorSetCount = 1;
