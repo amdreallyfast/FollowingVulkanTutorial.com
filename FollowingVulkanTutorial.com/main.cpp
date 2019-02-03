@@ -247,6 +247,7 @@ private:
     VkDescriptorPool mDescriptorPool = VK_NULL_HANDLE;
     std::vector<VkDescriptorSet> mDescriptorSets;
 
+    uint32_t mTextureMipLevels = 0;
     VkImage mTextureImage = VK_NULL_HANDLE;
     VkImageView mTextureImageView = VK_NULL_HANDLE;
     VkDeviceMemory mTextureImageMemory = VK_NULL_HANDLE;
@@ -963,7 +964,8 @@ private:
         // with simple intensity values, or it could simply be a finished array of pixel colors.
         mSwapChainImageViews.resize(swapChainImages.size());
         for (size_t i = 0; i < swapChainImages.size(); i++) {
-            mSwapChainImageViews.at(i) = CreateImageView(swapChainImages.at(i), mSwapChainImageFormat, VK_IMAGE_ASPECT_COLOR_BIT);
+            uint32_t mipLevels = 1;
+            mSwapChainImageViews.at(i) = CreateImageView(swapChainImages.at(i), mSwapChainImageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
         }
     }
 
@@ -1023,13 +1025,13 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        At this time (1/12/2019) in the tutorial (Textre Mapping: Image view and sampler), the
+        At this time (1/12/2019) in the tutorial (Texture Mapping: Image view and sampler), the
         image view create is mostly the same, so while image creation is special, image view
         creation is not. We are not using images for depth, which require a different type of
         image view.
     Creator:    John Cox, 11/2018
     ---------------------------------------------------------------------------------------------*/
-    VkImageView CreateImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags) {
+    VkImageView CreateImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t mipLevels) {
         VkImageViewCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
         createInfo.image = image;
@@ -1050,7 +1052,7 @@ private:
         // no mip mapping, and 1 layer (stereoscopic 3D needs 2 layers (??I think??))
         createInfo.subresourceRange.aspectMask = aspectFlags;
         createInfo.subresourceRange.baseMipLevel = 0;
-        createInfo.subresourceRange.levelCount = 1;
+        createInfo.subresourceRange.levelCount = mipLevels;
         createInfo.subresourceRange.baseArrayLayer = 0;
         createInfo.subresourceRange.layerCount = 1;
 
@@ -1564,7 +1566,7 @@ private:
         don't want it clobbered and therefore specify the existing layout.
     Creator:    John Cox, 01/2019
     ---------------------------------------------------------------------------------------------*/
-    void TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout currentLayout, VkImageLayout newLayout) {
+    void TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout currentLayout, VkImageLayout newLayout, uint32_t mipLevels) {
         VkImageMemoryBarrier barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
         barrier.oldLayout = currentLayout;
@@ -1586,7 +1588,7 @@ private:
         }
 
         barrier.subresourceRange.baseMipLevel = 0;      // no mipmapping right now (1/1/2019)
-        barrier.subresourceRange.levelCount = 1;
+        barrier.subresourceRange.levelCount = mipLevels;
         barrier.subresourceRange.baseArrayLayer = 0;    // not an array right now (1/1/2019)
         barrier.subresourceRange.layerCount = 1;
 
@@ -1657,14 +1659,14 @@ private:
 
     Creator:    John Cox, 01/2019
     ---------------------------------------------------------------------------------------------*/
-    void CreateImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags memProperties, VkImage &image, VkDeviceMemory &imageMemory) {
+    void CreateImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags memProperties, VkImage &image, VkDeviceMemory &imageMemory) {
         VkImageCreateInfo imageCreateInfo{};
         imageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
         imageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
         imageCreateInfo.extent.width = static_cast<uint32_t>(width);
         imageCreateInfo.extent.height = static_cast<uint32_t>(height);
         imageCreateInfo.extent.depth = 1;   //??what happens at 0??
-        imageCreateInfo.mipLevels = 1;      // no mipmapping right now (1/6/2019)
+        imageCreateInfo.mipLevels = mipLevels;
         imageCreateInfo.arrayLayers = 1;
         imageCreateInfo.format = format;
         imageCreateInfo.tiling = tiling;
@@ -1744,10 +1746,11 @@ private:
     Creator:    John Cox, 01/2019
     ---------------------------------------------------------------------------------------------*/
     void CreateDepthResources() {
+        uint32_t mipLevels = 1;
         VkFormat depthFormat = FindDepthFormat();
-        CreateImage(mSwapChainExtent.width, mSwapChainExtent.height, depthFormat, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, mDepthImage, mDepthImageMemory);
-        mDepthImageView = CreateImageView(mDepthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
-        TransitionImageLayout(mDepthImage, depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+        CreateImage(mSwapChainExtent.width, mSwapChainExtent.height, mipLevels, depthFormat, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, mDepthImage, mDepthImageMemory);
+        mDepthImageView = CreateImageView(mDepthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT, mipLevels);
+        TransitionImageLayout(mDepthImage, depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, mipLevels);
     }
 
     /*---------------------------------------------------------------------------------------------
@@ -1767,6 +1770,13 @@ private:
         int requestedComposition = STBI_rgb_alpha;
         /*stbi_uc *pixels = stbi_load("textures/statue.jpg", &tWidth, &tHeight, &numActualChannels, STBI_rgb_alpha);*/
         stbi_uc *pixels = stbi_load("textures/chalet.jpg", &tWidth, &tHeight, &numActualChannels, STBI_rgb_alpha);
+        
+        // - max finds largest dimension
+        // - log2 finds how many times that dimension can be divided by 2
+        // - floor rounds down to the nearest integer just in case the largest dimension was not a 
+        //  power of two
+        // - at least 1
+        mTextureMipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(tWidth, tHeight)))) + 1;
 
         // Note: We requested the image with RGBA, so even if it doesn't actually have 4 channels, 
         // we'll get a 4-channel image (alpha expected to be 0), so we should allocate space for 
@@ -1798,9 +1808,12 @@ private:
         // now create a Vulkan image for it
         VkFormat imageFormat = VK_FORMAT_R8G8B8A8_UNORM;      //??what happens if it isn't? is this just JPEG??
         VkImageTiling imageTiling = VK_IMAGE_TILING_OPTIMAL;
-        VkImageUsageFlags imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        VkImageUsageFlags imageUsage = 
+            VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+            VK_IMAGE_USAGE_TRANSFER_DST_BIT | 
+            VK_IMAGE_USAGE_SAMPLED_BIT;
         memProperties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-        CreateImage(tWidth, tHeight,
+        CreateImage(tWidth, tHeight, mTextureMipLevels,
             imageFormat,
             imageTiling,
             imageUsage,
@@ -1808,21 +1821,19 @@ private:
             mTextureImage,
             mTextureImageMemory);
 
-        // can't create an image with memory layout as a transfer destination, so need to change
+        // copy staging buffer into VkImage memory
         VkImageLayout currentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         VkImageLayout destLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        TransitionImageLayout(mTextureImage, imageFormat, currentLayout, destLayout);
-
-        // copy staging buffer into VkImage memory
+        TransitionImageLayout(mTextureImage, imageFormat, currentLayout, destLayout, mTextureMipLevels);
         CopyBufferToImage(stagingBuffer, mTextureImage, destLayout, static_cast<uint32_t>(tWidth), static_cast<uint32_t>(tHeight));
 
         // now change the image for use in shaders
         currentLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
         destLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        TransitionImageLayout(mTextureImage, imageFormat, currentLayout, destLayout);
+        TransitionImageLayout(mTextureImage, imageFormat, currentLayout, destLayout, mTextureMipLevels);
 
         // lastly, create a view for the new image
-        mTextureImageView = CreateImageView(mTextureImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
+        mTextureImageView = CreateImageView(mTextureImage, imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, mTextureMipLevels);
 
         // cleanup
         vkDestroyBuffer(mLogicalDevice, stagingBuffer, nullptr);
