@@ -92,18 +92,18 @@ struct Vertex {
     Creator:    John Cox, 02/2019
     ---------------------------------------------------------------------------------------------*/
     bool operator==(const Vertex &other) const {
-        return pos == other.pos 
-            && color == other.color 
+        return pos == other.pos
+            && color == other.color
             && texCoord == other.texCoord;
     }
 };
 
 /*-------------------------------------------------------------------------------------------------
 Description:
-    We want to avoid using duplicates, so we will be using a std::unordered_map<...> to track 
-    which vertices we've already used. In order to use a Vertex instance as a key though, we need 
-    to define a hash function for it in this way. As a consequence, this hashing *cannot* be moved 
-    into Vertex as a method if we still want to use the Vertex object as a key to a map. 
+    We want to avoid using duplicates, so we will be using a std::unordered_map<...> to track
+    which vertices we've already used. In order to use a Vertex instance as a key though, we need
+    to define a hash function for it in this way. As a consequence, this hashing *cannot* be moved
+    into Vertex as a method if we still want to use the Vertex object as a key to a map.
 Creator:    John Cox, 02/2019
 -------------------------------------------------------------------------------------------------*/
 namespace std {
@@ -1755,19 +1755,34 @@ private:
 
     /*---------------------------------------------------------------------------------------------
     Description:
-        Given an image (assuming it is used for color in 2 dimensions), generates progressively more and more scaled down image resolutions for each increasing mip level (level 0 = base image, and the detail decreases from there).
+        Given an image (assuming it is used for color in 2 dimensions), generates progressively
+        more and more scaled down image resolutions for each increasing mip level (level 0 = base
+        image, and the detail decreases from there).
 
-        Note: Scaling is performed by VkCmdBlit(...). This function calculates scaling by, for 
-        each axis, dividing the specified size of the source region by the specified size of the 
-        destination region. The result could be >1, and Vulkan will be fine with this. We want to 
-        generate lesser-detailed mip levels though, so we will make sure that our calculations 
-        result in progressively more and more scaled down images. 
-        
-        Also Note: Vulkan will automatically place the new texels in the appropriate memory 
+        Note: Scaling is performed by VkCmdBlit(...). This function calculates scaling by, for
+        each axis, dividing the specified size of the source region by the specified size of the
+        destination region. The result could be >1, and Vulkan will be fine with this. We want to
+        generate lesser-detailed mip levels though, so we will make sure that our calculations
+        result in progressively more and more scaled down images.
+
+        Also Note: Vulkan will automatically place the new texels in the appropriate memory
         location when we tell it what mip level the destination is. Sweet.
     Creator:    John Cox, 02/2019
     ---------------------------------------------------------------------------------------------*/
-    void GenerateMipMaps(VkImage image, int32_t tWidth, int32_t tHeight, uint32_t mipLevels) {
+    void GenerateMipMaps(VkImage image, VkFormat imageFormat, int32_t tWidth, int32_t tHeight, uint32_t mipLevels) {
+        // first check if image format supports blitting like this ("linear blitting")
+        // Note: Not all platforms support "blitting", so need to check for it's support if 
+        // planning on making this program cross-platform.
+        // (??what are "platforms"? Windows vs Linux? PC vs phone??) 
+        // Also Note: The image was created with VK_IMAGE_TILING_OPTIMAL, so we need to check if 
+        // "optimal tiling" even supports linear filtering from one image to another (it is 
+        // expected to; if it doesn't...don't know what to do).
+        VkFormatProperties formatProperties;
+        vkGetPhysicalDeviceFormatProperties(mPhysicalDevice, imageFormat, &formatProperties);
+        if (!(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
+            throw std::runtime_error("texture image format does not support linear blitting");
+        }
+
         VkCommandBuffer commandBuffer = BeginSingleUseCommandBuffer();
 
         VkImageMemoryBarrier barrier{};
@@ -1789,13 +1804,13 @@ private:
         // - transition mip level (index) i - 1 from a transfer destination to a source
         // - wait for that level to be filled (either vkCmdBlitImage or vkCmdCopyBufferToImage)
         // - start a blit command to create the next mip level from the previous
-        for (uint32_t i = 1; i < mipLevels; i++) {
+        for (uint32_t mipIndex = 1; mipIndex < mipLevels; mipIndex++) {
             // Note: Each mip level can have its own layout. The entire image (all mip levels) is 
             // created with the same layout. The CreateTextureImage(...) function transitions 
             // images after creation and buffer copy to being a transfer destination. As this loop 
             // progresses, need to change the previous texture region (mip level) to a transfer 
-            // source.
-            barrier.subresourceRange.baseMipLevel = i - 1;
+            // source. For the first loop, the base texture image is set to source.
+            barrier.subresourceRange.baseMipLevel = mipIndex - 1;
             barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
             barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
             barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -1811,30 +1826,31 @@ private:
             // minimum mipmap size 1px x 1px
             // Note: We are only dealing with 2D textures at this time (2/2/2019), so Z will not 
             // have any changes.
-            VkImageBlit blit{};
+            // Also Note: Each mip map level must be constructed from the previous, so only one 
+            // region at a time
+            std::vector<VkImageBlit> blit(1);
 
             // describe source region (width = x_src_1 - x_src_0, etc.)
-            blit.srcOffsets[0] = { 0, 0, 0 }; // VkOffset3D
-            blit.srcOffsets[1] = { mipWidth, mipHeight, mipDepth };
-            blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            blit.srcSubresource.mipLevel = i - 1;
-            blit.srcSubresource.baseArrayLayer = 0;
-            blit.srcSubresource.layerCount = 1;
+            blit.at(0).srcOffsets[0] = { 0, 0, 0 }; // VkOffset3D
+            blit.at(0).srcOffsets[1] = { mipWidth, mipHeight, mipDepth };
+            blit.at(0).srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            blit.at(0).srcSubresource.mipLevel = mipIndex - 1;
+            blit.at(0).srcSubresource.baseArrayLayer = 0;
+            blit.at(0).srcSubresource.layerCount = 1;
 
             // describe destination region (width = x_dst_1 - x_dst_0, etc.)
-            blit.dstOffsets[0] = { 0, 0, 0 }; // VkOffset3D;
-            blit.dstOffsets[1] = { mipWidth > 1 ? mipWidth / 2 : 1, mipHeight > 1 ? mipHeight / 2 : 1, mipDepth };
-            blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            blit.dstSubresource.mipLevel = i;
-            blit.dstSubresource.baseArrayLayer = 0;
-            blit.dstSubresource.layerCount = 1;
+            blit.at(0).dstOffsets[0] = { 0, 0, 0 }; // VkOffset3D;
+            blit.at(0).dstOffsets[1] = { mipWidth > 1 ? mipWidth / 2 : 1, mipHeight > 1 ? mipHeight / 2 : 1, mipDepth };
+            blit.at(0).dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            blit.at(0).dstSubresource.mipLevel = mipIndex;
+            blit.at(0).dstSubresource.baseArrayLayer = 0;
+            blit.at(0).dstSubresource.layerCount = 1;
 
-            // each mip map level must be constructed from the previous, so only one region at a 
-            // time
+            // do the actual command to scale down the previous image to make this mip level
             vkCmdBlitImage(commandBuffer,
                 image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,    // src image == dst image
                 image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                1, &blit,
+                static_cast<uint32_t>(blit.size()), blit.data(),
                 VK_FILTER_LINEAR);
 
             // reuse the VkImageBarrier to transition the previous region (mip level) to be shader 
@@ -1886,12 +1902,12 @@ private:
         int requestedComposition = STBI_rgb_alpha;
         /*stbi_uc *pixels = stbi_load("textures/statue.jpg", &tWidth, &tHeight, &numActualChannels, STBI_rgb_alpha);*/
         stbi_uc *pixels = stbi_load("textures/chalet.jpg", &tWidth, &tHeight, &numActualChannels, STBI_rgb_alpha);
-        
-        // - max finds largest dimension
+
+        // - max finds largest dimension (w or h)
         // - log2 finds how many times that dimension can be divided by 2
         // - floor rounds down to the nearest integer just in case the largest dimension was not a 
         //  power of two
-        // - at least 1
+        // - at least 1 (base image is mip level 0 and must exist for the texture to draw at all)
         mTextureMipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(tWidth, tHeight)))) + 1;
 
         // Note: We requested the image with RGBA, so even if it doesn't actually have 4 channels, 
@@ -1924,9 +1940,9 @@ private:
         // now create a Vulkan image for it
         VkFormat imageFormat = VK_FORMAT_R8G8B8A8_UNORM;      //??what happens if it isn't? is this just JPEG??
         VkImageTiling imageTiling = VK_IMAGE_TILING_OPTIMAL;
-        VkImageUsageFlags imageUsage = 
+        VkImageUsageFlags imageUsage =
             VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-            VK_IMAGE_USAGE_TRANSFER_DST_BIT | 
+            VK_IMAGE_USAGE_TRANSFER_DST_BIT |
             VK_IMAGE_USAGE_SAMPLED_BIT;
         memProperties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
         CreateImage(tWidth, tHeight, mTextureMipLevels,
@@ -1943,10 +1959,8 @@ private:
         TransitionImageLayout(mTextureImage, imageFormat, currentLayout, destLayout, mTextureMipLevels);
         CopyBufferToImage(stagingBuffer, mTextureImage, destLayout, static_cast<uint32_t>(tWidth), static_cast<uint32_t>(tHeight));
 
-        //// now change the image for use in shaders
-        //currentLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        //destLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        //TransitionImageLayout(mTextureImage, imageFormat, currentLayout, destLayout, mTextureMipLevels);
+        // generate the lesser detailed textures for the non-base mip levels
+        GenerateMipMaps(mTextureImage, VK_FORMAT_R8G8B8A8_UNORM, tWidth, tHeight, mTextureMipLevels);
 
         // lastly, create a view for the new image
         mTextureImageView = CreateImageView(mTextureImage, imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, mTextureMipLevels);
@@ -1983,6 +1997,10 @@ private:
         createInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
         createInfo.magFilter = VK_FILTER_LINEAR;    // more texels than fragments
         createInfo.minFilter = VK_FILTER_LINEAR;    // more fragments than texels
+        createInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        createInfo.minLod = 0.0f;
+        createInfo.maxLod = static_cast<float>(mTextureMipLevels);
+        createInfo.mipLodBias = 0.0f;
         createInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;   // in other words, tiling
         createInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
         createInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
@@ -1992,10 +2010,6 @@ private:
         createInfo.unnormalizedCoordinates = VK_FALSE;  // ??maybe TRUE if using sparse textures??
         createInfo.compareEnable = VK_FALSE;    // not using "texel compare" operations for now
         createInfo.compareOp = VK_COMPARE_OP_ALWAYS;
-        createInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-        createInfo.mipLodBias = 0.0f;
-        createInfo.minLod = 0.0f;
-        createInfo.maxLod = 0.0;
 
         if (vkCreateSampler(mLogicalDevice, &createInfo, nullptr, &mTextureSampler) != VK_SUCCESS) {
             throw std::runtime_error("failed to create texture sampler");
