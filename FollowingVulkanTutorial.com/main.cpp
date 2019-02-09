@@ -1999,6 +1999,7 @@ private:
         createInfo.minFilter = VK_FILTER_LINEAR;    // more fragments than texels
         createInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
         createInfo.minLod = 0.0f;
+        //createInfo.maxLod = 0.0f;
         createInfo.maxLod = static_cast<float>(mTextureMipLevels);
         createInfo.mipLodBias = 0.0f;
         createInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;   // in other words, tiling
@@ -2646,14 +2647,15 @@ private:
         UniformBufferObject ubo{};
 
         // starting with identity matrix, rotate with elapsed time around the Z axis
-        ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-        //ubo.model = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        //ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        ubo.model = glm::rotate(glm::mat4(1.0f), glm::radians(220.0f), glm::vec3(0.0f, 0.0f, 1.0f));
 
         // eye at (2,2,2), looking at (0,0,0), with Z axis as "up"
         // Note: Flip the camera's "up" (in this case Z) axis from + to - as an alternative to 
         // dealing with the counterclockwise face culling problem that is currently dealt with by 
         // flipping one of the projection transform's Y axes.
-        ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        float zoomAxis = sinf(time / 2.0f);
+        ubo.view = glm::lookAt(glm::vec3(2.0f + zoomAxis, 2.0f + zoomAxis, 2.0f + zoomAxis), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
         ubo.view[1][1] *= +1;
 
         // Note: If the screen was resized and the swap chain had to be recreated, this 
