@@ -2575,10 +2575,12 @@ private:
     /*---------------------------------------------------------------------------------------------
     Description:
         Creates a GLFW window (??anything else??).
-    Creator:    John Cox, 10/2018
+    Creator:    John Cox, 10/2018M
     ---------------------------------------------------------------------------------------------*/
     void InitWindow() {
-        glfwInit();
+        if (glfwInit() != GLFW_TRUE) {
+            return;
+        }
 
         // Note: GLFW was originally designed to create an OpenGL context. Possible "client API"
         // values are OpenGL or OpenGL ES. At this time (10/20/2018), there is no option for
@@ -2856,5 +2858,6 @@ int main() {
             << e.what() << std::endl;
     }
 
+    system("pause");
     return 0;
 }

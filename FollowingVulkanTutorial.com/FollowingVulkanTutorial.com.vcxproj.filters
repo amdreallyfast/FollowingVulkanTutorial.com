@@ -16,11 +16,11 @@
     <Filter Include="OriginalTutorial">
       <UniqueIdentifier>{99d6d827-68aa-4ad1-9656-e61c8a57daa2}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Shaders">
+      <UniqueIdentifier>{8c47a619-84d9-43b0-a240-071e048266ca}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="main.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="sample.cpp">
       <Filter>OriginalTutorial</Filter>
     </ClCompile>
@@ -30,13 +30,29 @@
     <ClCompile Include="vulkan_pch.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="cpp.hint" />
-    <None Include="shaders\triangle.frag" />
-    <None Include="shaders\triangle.vert" />
+    <None Include="shaders\frag.spv">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\triangle.frag">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\triangle.vert">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\vert.spv">
+      <Filter>Shaders</Filter>
+    </None>
     <None Include="shaders\compile_shaders.cmd">
-      <Filter>Source Files</Filter>
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="textures\chalet.jpg">
+      <Filter>Resource Files</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
